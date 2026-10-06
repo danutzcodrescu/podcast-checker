@@ -1,0 +1,21 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "deny",
+    "perf": "deny",
+    "suspicious": "deny"
+  },
+  "env": {
+    "browser": true,
+    "node": true
+  },
+  "ignorePatterns": ["src/paraglide/**", "src/routeTree.gen.ts"],
+  "options": {
+    "denyWarnings": true,
+    "reportUnusedDisableDirectives": "deny"
+  },
+  "plugins": ["eslint", "typescript", "unicorn", "oxc", "import", "react", "jsx-a11y"],
+  "rules": {
+    "react/react-in-jsx-scope": "off"
+  }
+}
