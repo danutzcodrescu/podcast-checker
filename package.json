@@ -12,14 +12,20 @@
     "db:migrate": "drizzle-kit migrate",
     "db:pull": "drizzle-kit pull",
     "db:push": "drizzle-kit push",
+    "db:setup": "docker compose up -d --wait postgres && pnpm db:migrate",
     "db:studio": "drizzle-kit studio",
     "dev": "vite dev --port 3000",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "generate-routes": "tsr generate",
+    "icons:generate": "node scripts/generate-icons.mjs",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",
@@ -40,6 +46,7 @@
     "@tanstack/react-store": "0.11.2",
     "@tanstack/store": "0.11.2",
     "better-auth": "^1.5.3",
+    "clsx": "^2.1.1",
     "drizzle-kit": "^0.31.9",
     "drizzle-orm": "^0.45.1",
     "highlight.js": "^11.11.1",
@@ -49,15 +56,20 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "streamdown": "^2.3.0",
+    "tailwind-merge": "^3.7.0",
     "tailwindcss": "^4.1.18",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@inlang/paraglide-js": "^2.13.1",
+    "@playwright/test": "^1.63.0",
     "@rolldown/plugin-babel": "^0.2.3",
     "@tanstack/devtools-event-client": "0.5.0",
     "@tanstack/devtools-vite": "0.8.5",
     "@tanstack/router-cli": "^1.132.0",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
     "@types/node": "^22.10.2",
     "@types/pg": "^8.15.6",
     "@types/react": "^19.2.0",
@@ -65,10 +77,13 @@
     "@vitejs/plugin-react": "^6.0.1",
     "babel-plugin-react-compiler": "^1.0.0",
     "dotenv": "^17.3.1",
+    "jsdom": "^30.1.2",
     "oxfmt": "^0.72.0",
     "oxlint": "^1.87.0",
+    "sharp": "^0.35.5",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2",
-    "vite": "^8.0.0"
+    "vite": "^8.0.0",
+    "vitest": "^5.0.3"
   }
 }

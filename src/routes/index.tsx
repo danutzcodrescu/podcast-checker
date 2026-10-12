@@ -1,14 +1,16 @@
 import { createFileRoute } from '@tanstack/react-router'
 
-export const Route = createFileRoute('/')({ component: Home })
+import { LibraryPage } from '#/components/library-page'
+import { getAuthenticatedUser } from '#/lib/auth-middleware'
+import { m } from '#/paraglide/messages'
+
+export const Route = createFileRoute('/')({
+  beforeLoad: async () => ({ user: await getAuthenticatedUser() }),
+  head: () => ({ meta: [{ title: m.library_title() }] }),
+  component: Home,
+})
 
 function Home() {
-  return (
-    <div className="p-8">
-      <h1 className="text-4xl font-bold">Welcome to TanStack Start</h1>
-      <p className="mt-4 text-lg">
-        Edit <code>src/routes/index.tsx</code> to get started.
-      </p>
-    </div>
-  )
+  const { user } = Route.useRouteContext()
+  return <LibraryPage email={user.email} />
 }

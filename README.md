@@ -17,6 +17,42 @@ To build this application for production:
 npm run build
 ```
 
+## Tests
+
+- `pnpm test` runs Vitest component tests with Testing Library.
+- `pnpm test:watch` runs the component tests in watch mode.
+- `pnpm exec playwright install chromium webkit` installs the browsers for end-to-end tests.
+- `pnpm test:e2e` runs the Playwright starter suite and starts the app automatically.
+- `pnpm test:e2e:ui` opens Playwright’s interactive test runner.
+
+Component tests cover email-only sign-up, sign-in/sign-out navigation, form state,
+and localized errors. The starter end-to-end suite covers unauthenticated route
+protection, navigation, English/French localization, and mobile layout. It mocks
+failed sign-in requests so it does not need a database or real user accounts.
+
+Successful authentication is covered with mocked auth responses in component
+tests. As features grow, extend `e2e/auth.spec.ts` with seeded database accounts
+to exercise real successful sign-up, sign-in, and sign-out end to end.
+
+## Logo and browser icons
+
+The original artwork is in `public/logo.png`. Run `pnpm icons:generate` after
+replacing it to regenerate the optimized header logo, 16px/32px PNG favicons,
+multi-size ICO favicon, opaque 180px Apple touch icon, and monochrome Safari
+pinned-tab SVG. All icon URLs are root-relative so they also work on French routes.
+
+The Playwright suite runs in Chromium, desktop WebKit, and mobile Safari
+emulation, including checks for logo rendering and delivery of browser icons.
+
+## Authentication pages
+
+- `/signin` provides email/password authentication; `/signup` also requires password confirmation.
+- `/` is the authenticated library page. Its route calls a server function
+  protected by `requireAuth` middleware; anonymous visitors go to `/signin`.
+- Successful sign-in or sign-up navigates to `/`; sign-out navigates to `/signin`.
+- English is the default locale. French routes use the `/fr` prefix, and the
+  language dropdown below the form preserves the current page when switching locales.
+
 ## Styling
 
 This project uses [Tailwind CSS](https://tailwindcss.com/) for styling.
@@ -89,7 +125,7 @@ ANTHROPIC_API_KEY=your_anthropic_api_key
 
 Paraglide JS provides localized routing and message formatting.
 
-- Edit source translations in `messages/en.json` and `messages/de.json`.
+- Edit source translations in `messages/en.json` and `messages/fr.json`.
 - Supported locales and the message file pattern are configured in `project.inlang/settings.json`.
 - URLs are localized through the Paraglide Vite plugin and router `rewrite` hooks.
 - Message functions and the locale runtime are generated in `src/paraglide`. Do not edit these files directly.
@@ -119,28 +155,79 @@ Compilation turns existing translations into JavaScript functions; it does not t
 
 2. Visit the [Better Auth documentation](https://www.better-auth.com) to unlock the full potential of authentication in your app.
 
-### Adding a Database (Optional)
+### Local PostgreSQL with Docker Compose
 
-Better Auth can work in stateless mode, but to persist user data, add a database:
+The app persists Better Auth users, accounts, and sessions through Drizzle and
+PostgreSQL. Start Docker Desktop before initializing the database.
 
-```typescript
-// src/lib/auth.ts
-import { betterAuth } from 'better-auth'
-import { Pool } from 'pg'
+The `postgres` service uses PostgreSQL 18, a health check, and the persistent
+`postgres18_data` volume mounted at `/var/lib/postgresql`, following the
+PostgreSQL 18 image’s storage layout. It listens on `127.0.0.1:5432` with the local development defaults
+`podcast_checker` for the database, username, and password.
 
-export const auth = betterAuth({
-  database: new Pool({
-    connectionString: process.env.DATABASE_URL,
-  }),
-  // ... rest of config
-})
+Set this value in your existing `.env.local`:
+
+```env
+DATABASE_URL=postgresql://podcast_checker:podcast_checker@localhost:5432/podcast_checker
 ```
 
-Then run migrations:
+See `.env.example` for the app’s other environment variables. The app and Drizzle
+CLI both load `.env.local` and `.env`, preserving values already set in the
+process environment. Compose defaults can be overridden using `POSTGRES_DB`,
+`POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_PORT` in your shell or `.env`;
+update `DATABASE_URL` to match any overrides.
+
+Start PostgreSQL and run the app:
 
 ```bash
-npx -y @better-auth/cli migrate
+docker compose up -d --wait postgres
+pnpm dev
 ```
+
+On a fresh data volume, PostgreSQL automatically runs
+`docker/postgres/10-init-migrations.sh` through `/docker-entrypoint-initdb.d`.
+The script applies the SQL migrations listed in `drizzle/meta/_journal.json`
+in journal order and records their SHA-256 hashes and timestamps in
+`drizzle.__drizzle_migrations`, so subsequent Drizzle migrations recognize
+them as already applied. Each migration and its history entry run in one
+transaction, and SQL errors stop initialization.
+
+Initialization scripts run **only when the data volume is empty**, not on
+container restarts. For an existing volume, or to start PostgreSQL and apply
+any pending migrations in one command, use:
+
+```bash
+pnpm db:setup
+pnpm dev
+```
+
+`db:setup` waits for PostgreSQL to become healthy, then runs `db:migrate`.
+The initial migration in `drizzle/0000_auth.sql` creates the user, account,
+session, and verification tables, including their constraints and indexes.
+
+After changing the schema, generate and apply a new migration:
+
+```bash
+pnpm db:generate
+pnpm db:migrate
+```
+
+Restart the app after changing `.env.local`. Check the database with
+`docker compose ps` or `docker compose logs postgres`. Use `docker compose stop`
+to stop it while keeping its data.
+
+### Authentication validation
+
+- Frontend: requires an email and password; uses the browser’s email validation;
+  and, on sign-up, requires matching password confirmation and limits passwords
+  to 8–128 characters. Mismatch and API errors are
+  translated into English and French.
+- Backend: Better Auth validates email format and request types, checks sign-up
+  passwords are 8–128 characters, normalizes email addresses, rejects duplicate
+  accounts, and hashes passwords. Sign-in checks the submitted password against
+  the stored hash and rejects passwords longer than 128 characters.
+- Password confirmation is a frontend check. The backend receives one password
+  and applies its validation independently of the browser.
 
 ## Routing
 
