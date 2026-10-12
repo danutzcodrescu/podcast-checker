@@ -5,9 +5,22 @@ Welcome to your new TanStack Start app!
 To run this application:
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
+
+## Git hooks
+
+`pnpm install` installs the Husky pre-commit hook automatically. If dependencies
+are already installed, run `pnpm prepare` once to enable it.
+
+Before each commit, the hook runs Oxlint with automatic fixes on staged
+JavaScript and TypeScript files, then Oxfmt on staged files it supports. Both
+tools respect their existing ignore patterns. Fixes are staged automatically,
+unstaged edits are preserved, and remaining lint errors block the commit.
+
+Run `pnpm lint:staged` to run the same checks manually on staged files.
+`pnpm check` checks linting and formatting across the project.
 
 # Building For Production
 
