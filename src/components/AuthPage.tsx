@@ -3,11 +3,13 @@ import { Check, LoaderCircle } from 'lucide-react'
 import { useReducer } from 'react'
 import type { FormEvent } from 'react'
 
-import { AppHeader } from '#/components/app-header'
+import { AppHeader } from '#/components/AppHeader'
 import ParaglideLocaleSwitcher from '#/components/LocaleSwitcher'
-import { PodcastShowcase } from '#/components/podcast-showcase'
-import { Input } from '#/components/ui/input'
-import { PasswordInput } from '#/components/ui/password-input'
+import { PageShell } from '#/components/PageShell'
+import { PodcastShowcase } from '#/components/PodcastShowcase'
+import { Button } from '#/components/ui/Button'
+import { Input } from '#/components/ui/Input'
+import { PasswordInput } from '#/components/ui/PasswordInput'
 import { authClient } from '#/lib/auth-client'
 import { m } from '#/paraglide/messages'
 
@@ -45,18 +47,21 @@ function authErrorMessage(code?: string) {
 
 export function AuthPage({ mode }: { mode: AuthMode }) {
   return (
-    <div className="auth-page">
+    <PageShell>
       <AppHeader />
-      <main className="auth-layout">
+      <main className="mx-auto mt-20 grid max-w-7xl grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] items-start gap-20 laptop:gap-9 tablet:mt-12 tablet:max-w-2xl tablet:grid-cols-1 mobile:mt-10 mobile:gap-8">
         <PodcastShowcase />
-        <div className="auth-column">
-          <section className="auth-panel" aria-labelledby="auth-heading">
+        <div className="mt-10 min-w-0 tablet:row-start-3 tablet:m-0">
+          <section
+            className="rounded-2xl border border-border bg-surface px-12 pt-16 pb-12 shadow-xs laptop:px-8 laptop:pt-10 laptop:pb-8 tablet:p-9 mobile:px-6 mobile:py-8"
+            aria-labelledby="auth-heading"
+          >
             <AuthForm key={mode} mode={mode} />
           </section>
           <ParaglideLocaleSwitcher />
         </div>
       </main>
-    </div>
+    </PageShell>
   )
 }
 
@@ -103,18 +108,24 @@ function AuthForm({ mode }: { mode: AuthMode }) {
 
   return (
     <>
-      <h2 id="auth-heading">
+      <h2 id="auth-heading" className="m-0 text-page-title leading-tight font-bold tracking-tight">
         {isSignUp ? m.auth_create_account_heading() : m.auth_welcome_back()}
       </h2>
-      <p className="auth-subtitle">
+      <p className="mt-3 text-base leading-normal text-subtle">
         {isSignUp ? m.auth_sign_up_subtitle() : m.auth_sign_in_subtitle()}
       </p>
 
-      <form className="auth-form" onSubmit={handleSubmit} aria-busy={pending}>
-        <div className="form-field">
-          <label htmlFor="email">{m.auth_email_label()}</label>
+      <form
+        className="mt-10 flex flex-col gap-8 mobile:mt-8 mobile:gap-6"
+        onSubmit={handleSubmit}
+        aria-busy={pending}
+      >
+        <div className="flex flex-col gap-2.5">
+          <label className="text-sm font-semibold text-foreground" htmlFor="email">
+            {m.auth_email_label()}
+          </label>
           <Input
-            className="h-14 px-5 md:text-base"
+            className="h-12 px-4"
             id="email"
             name="email"
             type="email"
@@ -125,8 +136,10 @@ function AuthForm({ mode }: { mode: AuthMode }) {
           />
         </div>
 
-        <div className="form-field">
-          <label htmlFor="password">{m.auth_password_label()}</label>
+        <div className="flex flex-col gap-2.5">
+          <label className="text-sm font-semibold text-foreground" htmlFor="password">
+            {m.auth_password_label()}
+          </label>
           <PasswordInput
             id="password"
             name="password"
@@ -143,15 +156,17 @@ function AuthForm({ mode }: { mode: AuthMode }) {
             disabled={!hydrated || pending}
           />
           {isSignUp && (
-            <p id="password-hint" className="field-hint">
+            <p id="password-hint" className="m-0 text-sm text-subtle">
               {m.auth_password_hint()}
             </p>
           )}
         </div>
 
         {isSignUp && (
-          <div className="form-field">
-            <label htmlFor="confirm-password">{m.auth_confirm_password_label()}</label>
+          <div className="flex flex-col gap-2.5">
+            <label className="text-sm font-semibold text-foreground" htmlFor="confirm-password">
+              {m.auth_confirm_password_label()}
+            </label>
             <PasswordInput
               id="confirm-password"
               name="confirmPassword"
@@ -169,7 +184,7 @@ function AuthForm({ mode }: { mode: AuthMode }) {
               disabled={!hydrated || pending}
             />
             {confirmationError && (
-              <p id="confirmation-error" className="field-error" role="alert">
+              <p id="confirmation-error" className="m-0 text-sm text-destructive" role="alert">
                 {confirmationError}
               </p>
             )}
@@ -177,28 +192,35 @@ function AuthForm({ mode }: { mode: AuthMode }) {
         )}
 
         {!isSignUp && (
-          <label className="remember-me">
+          <label className="relative inline-flex w-fit cursor-pointer items-center gap-4 text-sm text-foreground">
             <input
+              className="peer absolute left-0 m-0 size-7 cursor-pointer opacity-0"
               type="checkbox"
               checked={rememberMe}
               onChange={(event) => updateState({ rememberMe: event.target.checked })}
               disabled={!hydrated || pending}
             />
-            <span className="checkbox-icon" aria-hidden="true">
-              <Check strokeWidth={3} />
+            <span
+              className="grid size-7 place-items-center rounded-md border border-input bg-white text-transparent peer-checked:border-primary peer-checked:bg-primary peer-checked:text-primary-foreground peer-focus-visible:outline-3 peer-focus-visible:outline-offset-4 peer-focus-visible:outline-ring"
+              aria-hidden="true"
+            >
+              <Check className="size-5" strokeWidth={3} />
             </span>
             <span>{m.auth_remember_me()}</span>
           </label>
         )}
 
         {error && (
-          <p className="form-error" role="alert">
+          <p
+            className="-my-2 rounded-lg bg-destructive-soft px-4 py-3 text-sm text-destructive"
+            role="alert"
+          >
             {error}
           </p>
         )}
 
-        <button className="auth-submit" type="submit" disabled={!hydrated || pending}>
-          {pending && <LoaderCircle className="loading-icon" aria-hidden="true" />}
+        <Button type="submit" disabled={!hydrated || pending}>
+          {pending && <LoaderCircle className="size-5 animate-spin" aria-hidden="true" />}
           {pending
             ? isSignUp
               ? m.auth_creating_account()
@@ -206,12 +228,15 @@ function AuthForm({ mode }: { mode: AuthMode }) {
             : isSignUp
               ? m.auth_create_account()
               : m.auth_sign_in()}
-        </button>
+        </Button>
       </form>
 
-      <div className="auth-switch">
+      <div className="mt-9 flex flex-wrap justify-center gap-2 border-t border-border pt-9 text-sm text-foreground mobile:mt-7 mobile:pt-6">
         <span>{isSignUp ? m.auth_existing_account() : m.auth_new_here()}</span>
-        <Link to={isSignUp ? '/signin' : '/signup'}>
+        <Link
+          className="underline underline-offset-4 hover:text-link"
+          to={isSignUp ? '/signin' : '/signup'}
+        >
           {isSignUp ? m.auth_sign_in() : m.auth_create_account_heading()}
         </Link>
       </div>

@@ -60,15 +60,51 @@ emulation, including checks for logo rendering and delivery of browser icons.
 ## Authentication pages
 
 - `/signin` provides email/password authentication; `/signup` also requires password confirmation.
-- `/` is the authenticated library page. Its route calls a server function
+- `/` is the authenticated Discover page. Its route calls a server function
   protected by `requireAuth` middleware; anonymous visitors go to `/signin`.
 - Successful sign-in or sign-up navigates to `/`; sign-out navigates to `/signin`.
 - English is the default locale. French routes use the `/fr` prefix, and the
   language dropdown below the form preserves the current page when switching locales.
+- Logged-in pages group language selection and sign-out in the header’s
+  hamburger account menu, built with shadcn’s accessible dropdown components.
+
+## Podcast discovery
+
+The Discover tab searches Apple’s iTunes Search API for podcasts by name, host,
+or topic. Searches run on form submission through an authenticated server
+function, with a 10-second upstream timeout and up to 50 results. No API key is
+required. The catalog currently uses the US storefront.
+
+Results show artwork, podcast titles, publishers, and links to Apple Podcasts.
+Loading, empty, and retryable error states are available in English and French.
+TanStack Query caches searches for five minutes. Each result also includes its
+Apple collection ID and RSS feed URL to support a future follow feature.
+
+Off-screen result cards use `content-visibility: auto` with remembered intrinsic
+heights to defer browser rendering. Artwork is lazy-loaded and decoded
+asynchronously; Apple CDN images use responsive sources matched to the card size
+and screen pixel density.
+
+## File naming
+
+- React component files use PascalCase, such as `PodcastSearch.tsx` and `PasswordInput.tsx`.
+- Component tests match their component filenames, such as `PodcastSearch.test.tsx`.
+- Non-component files use kebab-case, such as `podcast-search.ts` and `podcast-artwork.ts`.
+- File-based routes follow TanStack Router’s filename conventions.
 
 ## Styling
 
 This project uses [Tailwind CSS](https://tailwindcss.com/) for styling.
+
+- Use Tailwind's spacing, typography, and radius scales for component styles
+  (`gap-4`, `px-6`, `text-lg`, `rounded-lg`) instead of one-off pixel values.
+- Shared colors, fluid heading sizes, and artwork dimensions are theme tokens in
+  `src/styles.css`. Keep arbitrary values for structural layouts, gradients, or
+  browser-specific behavior that standard utilities cannot express.
+- The `laptop:`, `tablet:`, and `mobile:` variants apply at widths up to 1200,
+  900, and 480px respectively.
+- Oxfmt sorts Tailwind classes in JSX and `cn(...)` using this theme. Run
+  `pnpm format` to apply sorting; `pnpm format:check` verifies it.
 
 ### Removing Tailwind CSS
 

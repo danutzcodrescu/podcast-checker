@@ -30,6 +30,7 @@
     "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
+    "@radix-ui/react-dropdown-menu": "^2.1.25",
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/ai": "0.64.1",
     "@tanstack/ai-anthropic": "0.19.4",

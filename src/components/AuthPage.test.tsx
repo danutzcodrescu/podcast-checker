@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import type { ComponentPropsWithoutRef } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { AuthPage } from '#/components/auth-page'
+import { AuthPage } from '#/components/AuthPage'
 import { overwriteGetLocale } from '#/paraglide/runtime'
 
 const mocks = vi.hoisted(() => ({

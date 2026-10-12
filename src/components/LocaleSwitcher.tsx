@@ -1,7 +1,7 @@
 import { useHydrated } from '@tanstack/react-router'
 import { Globe } from 'lucide-react'
 
-import { NativeSelect, NativeSelectOption } from '#/components/ui/native-select'
+import { NativeSelect, NativeSelectOption } from '#/components/ui/NativeSelect'
 import { m } from '#/paraglide/messages'
 import { assertIsLocale, getLocale, locales, setLocale } from '#/paraglide/runtime'
 
@@ -10,14 +10,14 @@ export default function ParaglideLocaleSwitcher() {
   const hydrated = useHydrated()
 
   return (
-    <footer className="mt-7 flex items-center justify-center gap-2 pb-2 text-muted-foreground">
-      <Globe className="size-6" strokeWidth={1.75} aria-hidden="true" />
+    <footer className="mt-8 flex items-center justify-center gap-1 pb-2 text-muted-foreground">
+      <Globe className="size-5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
       <NativeSelect
         aria-label={m.language_label()}
         value={currentLocale}
         onChange={(event) => setLocale(assertIsLocale(event.target.value))}
         disabled={!hydrated}
-        className="h-11 cursor-pointer border-0 pl-0 pr-8 text-base shadow-none hover:text-foreground"
+        className="h-11 min-w-30 cursor-pointer border-0 bg-transparent pr-10 pl-3 text-base shadow-none hover:text-foreground md:text-sm dark:bg-transparent dark:hover:bg-transparent"
       >
         {locales.map((locale) => (
           <NativeSelectOption key={locale} value={locale} lang={locale}>

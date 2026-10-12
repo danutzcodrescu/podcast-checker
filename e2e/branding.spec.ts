@@ -7,7 +7,7 @@ test('renders the supplied logo and serves browser and Apple icons on localized 
 }) => {
   await page.goto('/fr/signin')
 
-  const logo = page.locator('.brand img')
+  const logo = page.getByRole('banner').getByRole('link').locator('img')
   await expect(logo).toBeVisible()
   await expect(logo).toHaveAttribute('src', '/logo-mark.png')
   await expect

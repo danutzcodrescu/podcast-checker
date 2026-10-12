@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 
-import { AuthPage } from '#/components/auth-page'
+import { AuthPage } from '#/components/AuthPage'
 import { m } from '#/paraglide/messages'
 
 export const Route = createFileRoute('/signup')({

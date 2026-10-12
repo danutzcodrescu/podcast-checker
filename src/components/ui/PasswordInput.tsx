@@ -2,7 +2,7 @@ import { Eye, EyeOff } from 'lucide-react'
 import { useState } from 'react'
 import type { ComponentProps } from 'react'
 
-import { Input } from '#/components/ui/input'
+import { Input } from '#/components/ui/Input'
 import { cn } from '#/lib/utils'
 
 type PasswordInputProps = Omit<ComponentProps<typeof Input>, 'type'> & {
@@ -26,7 +26,7 @@ export function PasswordInput({
         {...props}
         id={id}
         type={visible ? 'text' : 'password'}
-        className={cn('h-14 px-5 pr-14 md:text-base', className)}
+        className={cn('h-12 px-4 pr-14', className)}
         disabled={disabled}
       />
       <button
@@ -39,9 +39,9 @@ export function PasswordInput({
         disabled={disabled}
       >
         {visible ? (
-          <EyeOff className="size-6" aria-hidden="true" />
+          <EyeOff className="size-5" aria-hidden="true" />
         ) : (
-          <Eye className="size-6" aria-hidden="true" />
+          <Eye className="size-5" aria-hidden="true" />
         )}
       </button>
     </div>
