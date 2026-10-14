@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite'
+import { resolve } from 'node:path'
 import { devtools } from '@tanstack/devtools-vite'
 import { paraglideVitePlugin } from '@inlang/paraglide-js'
 
@@ -18,7 +19,23 @@ const config = defineConfig({
       outdir: './src/paraglide',
       strategy: ['url', 'baseLocale'],
     }),
-    nitro({ rollupConfig: { external: [/^@sentry\//] } }),
+    nitro({
+      preset: 'node-server',
+      plugins: ['./src/plugins/podcast-worker.ts'],
+      rollupConfig: { external: [/^@sentry\//] },
+      hooks: {
+        'rollup:before'(instance, bundle) {
+          if (instance.options.dev) return
+          // Additional Node entries share Nitro's dependency tracing and output.
+          bundle.input = {
+            index: instance.options.entry,
+            'podcast-worker': resolve('scripts/podcast-worker.ts'),
+            migrate: resolve('scripts/migrate.ts'),
+          }
+          bundle.output = { ...bundle.output, entryFileNames: '[name].mjs' }
+        },
+      },
+    }),
     tailwindcss(),
     tanstackStart(),
     viteReact(),

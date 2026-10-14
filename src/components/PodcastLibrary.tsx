@@ -5,6 +5,7 @@ import { PodcastCard } from '#/components/PodcastCard'
 import { PodcastFollowActions } from '#/components/PodcastFollowActions'
 import { PodcastLibrarySidebar } from '#/components/PodcastLibrarySidebar'
 import { PodcastSearch } from '#/components/PodcastSearch'
+import { PodcastSyncStatus } from '#/components/PodcastSyncStatus'
 import { Button } from '#/components/ui/Button'
 import { usePodcastLibrary } from '#/hooks/use-podcast-library'
 import type { Podcast } from '#/lib/apple-podcasts'
@@ -114,13 +115,22 @@ export function PodcastLibrary({
             </p>
             {filtered.length ? (
               <ul className="grid list-none gap-3 p-0" aria-label={m.library_results()}>
-                {filtered.map(({ podcast, categoryNames }) => (
+                {filtered.map(({ podcast, categoryNames, sync }) => (
                   <PodcastCard
                     key={podcast.id}
                     podcast={podcast}
                     categories={categoryNames}
                     actions={renderActions(podcast)}
-                  />
+                  >
+                    <PodcastSyncStatus
+                      sync={sync}
+                      hasFeed={!!podcast.feedUrl}
+                      disabled={disabled || isSaving}
+                      onRetry={() => {
+                        void library.retryIngestion(podcast.id)
+                      }}
+                    />
+                  </PodcastCard>
                 ))}
               </ul>
             ) : (

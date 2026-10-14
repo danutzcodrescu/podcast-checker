@@ -58,10 +58,12 @@ export function PodcastCard({
   podcast,
   categories = emptyCategories,
   actions,
+  children,
 }: {
   podcast: Podcast
   categories?: string[]
   actions?: ReactNode
+  children?: ReactNode
 }) {
   return (
     <li className="flex items-center gap-6 rounded-xl border border-card-border bg-surface p-4 pr-5 tablet:grid tablet:grid-cols-[auto_minmax(0,1fr)] tablet:gap-x-4 tablet:gap-y-2 mobile:gap-x-3 mobile:p-3">
@@ -80,6 +82,7 @@ export function PodcastCard({
             ))}
           </div>
         )}
+        {children}
       </div>
       <div className="flex shrink-0 flex-col items-end gap-2 tablet:col-start-2 tablet:items-start mobile:col-span-2 mobile:col-start-1">
         {actions}

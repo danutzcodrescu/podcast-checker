@@ -114,5 +114,14 @@
   "library_categories_hint": "Saisissez un nom pour créer votre première catégorie.",
   "library_saving": "Enregistrement…",
   "library_save_categories": "Enregistrer les catégories",
-  "library_follow_save": "Suivre et enregistrer"
+  "library_follow_save": "Suivre et enregistrer",
+  "sync_no_feed": "Aucune URL de flux RSS disponible.",
+  "sync_queued": "Importation des épisodes en attente",
+  "sync_importing": "Importation des épisodes…",
+  "sync_embedding": "Vectorisation des épisodes…",
+  "sync_ready": "Épisodes indexés",
+  "sync_failed": "Échec de l’importation ou de la vectorisation ; une nouvelle tentative est prévue.",
+  "sync_progress": "{imported} importés · {embedded} vectorisés",
+  "sync_last_refresh": "Dernière actualisation du flux : {date}",
+  "sync_retry": "Réessayer l’importation des épisodes"
 }

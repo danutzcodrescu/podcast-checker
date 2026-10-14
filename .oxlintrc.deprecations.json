@@ -1,0 +1,15 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "extends": ["./.oxlintrc.json"],
+  "categories": {
+    "correctness": "off",
+    "perf": "off",
+    "suspicious": "off"
+  },
+  "options": {
+    "reportUnusedDisableDirectives": "off"
+  },
+  "rules": {
+    "typescript/no-deprecated": "error"
+  }
+}

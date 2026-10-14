@@ -114,5 +114,14 @@
   "library_categories_hint": "Type a name to create your first category.",
   "library_saving": "Saving…",
   "library_save_categories": "Save categories",
-  "library_follow_save": "Follow & save"
+  "library_follow_save": "Follow & save",
+  "sync_no_feed": "No RSS feed URL is available.",
+  "sync_queued": "Episode import queued",
+  "sync_importing": "Importing episodes…",
+  "sync_embedding": "Embedding episodes…",
+  "sync_ready": "Episodes indexed",
+  "sync_failed": "Import or embedding failed; automatic retry is scheduled.",
+  "sync_progress": "{imported} imported · {embedded} embedded",
+  "sync_last_refresh": "Last feed refresh: {date}",
+  "sync_retry": "Retry episode import"
 }

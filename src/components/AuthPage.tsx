@@ -1,7 +1,7 @@
 import { Link, useHydrated, useNavigate } from '@tanstack/react-router'
 import { Check, LoaderCircle } from 'lucide-react'
 import { useReducer } from 'react'
-import type { FormEvent } from 'react'
+import type { SubmitEvent } from 'react'
 
 import { AppHeader } from '#/components/AppHeader'
 import ParaglideLocaleSwitcher from '#/components/LocaleSwitcher'
@@ -76,7 +76,7 @@ function AuthForm({ mode }: { mode: AuthMode }) {
     confirmationError: '',
   })
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     if (pending) return
 

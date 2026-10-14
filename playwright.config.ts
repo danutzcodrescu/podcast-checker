@@ -27,6 +27,7 @@ export default defineConfig({
       PORT: '4317',
       BETTER_AUTH_URL: baseURL,
       BETTER_AUTH_SECRET: 'playwright-test-secret-for-local-tests-only-123456789',
+      PODCAST_WORKER_ENABLED: 'false',
     },
   },
 })

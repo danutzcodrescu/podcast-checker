@@ -22,6 +22,11 @@ unstaged edits are preserved, and remaining lint errors block the commit.
 Run `pnpm lint:staged` to run the same checks manually on staged files.
 `pnpm check` checks linting and formatting across the project.
 
+`pnpm lint` also runs a type-aware deprecated-API check against the installed
+dependency declarations, including editor-only `@deprecated` annotations. Run
+`pnpm lint:deprecations` to execute that check on its own. Generated Paraglide and
+route-tree files are excluded through the shared lint configuration.
+
 # Building For Production
 
 To build this application for production:
@@ -100,6 +105,163 @@ Libraries and categories are stored in PostgreSQL and scoped to the authenticate
 user. Apply `drizzle/0001_podcast_library.sql` with `pnpm db:migrate` when upgrading
 an existing database (or use `pnpm db:setup` to start PostgreSQL and migrate).
 
+## Background RSS ingestion and episode embeddings
+
+Following a podcast with an RSS URL atomically creates or links a shared feed
+record. The record is a durable outbox: the web request does not fetch RSS, parse
+XML, or call the embedding API. A Nitro startup plugin starts a **Node worker
+thread inside the app container**, keeping RSS parsing off the web server's event
+loop. The thread dispatches outbox records every five seconds into PostgreSQL-backed
+**pg-boss** queues. A persistent
+once-a-minute dispatch schedule provides a backstop. Due feeds refresh hourly
+by default, with conditional HTTP requests when supported.
+
+### Run locally
+
+Use **`docker-compose.dev.yml`** for PostgreSQL only, and run the app on your host
+with `pnpm dev`. This file reuses the PostgreSQL service from `docker-compose.yml`
+and the existing `postgres18_data` volume without including the app build service.
+`pnpm db:setup` selects this development Compose file automatically.
+
+The PostgreSQL service now uses **`pgvector/pgvector:pg18`**. It keeps the existing
+`postgres18_data` volume at `/var/lib/postgresql`. Migration
+`drizzle/0002_podcast_ingestion.sql` enables the `vector` extension, creates feed,
+episode, and embedding tables, and queues feeds already in users' libraries.
+pg-boss manages its own `pgboss` schema when the worker starts; it needs no extra
+PostgreSQL extension. The database role must be able to create that schema, and
+the migration role must be able to enable `vector`.
+
+1. Add `OPENAI_API_KEY` to `.env.local`.
+2. Upgrade/start PostgreSQL and apply migrations:
+
+   ```bash
+   pnpm db:setup
+   ```
+
+3. Run the app; it automatically starts the worker thread:
+
+   ```bash
+   pnpm dev
+   ```
+
+### Deploy to a VPS with Docker Compose
+
+The default **`docker-compose.yml`** runs two services: **`app`** (TanStack Start/Nitro plus the worker thread)
+and **`postgres`** (PostgreSQL 18 plus pgvector). There is no separate worker
+container. The multi-stage Dockerfile bundles all three Node entry points—web
+server, worker, and migrations—into `.output`; the runtime image contains only
+the built output and migrations, without source code or development dependencies.
+
+Configure `.env` on the VPS, for example:
+
+```dotenv
+POSTGRES_USER=podcast_checker
+POSTGRES_DB=podcast_checker
+POSTGRES_PASSWORD=replace-with-your-database-password
+BETTER_AUTH_SECRET=replace-with-a-long-random-secret
+BETTER_AUTH_URL=https://podcasts.example.com
+OPENAI_API_KEY=your-openai-api-key
+APP_PORT=3000
+```
+
+Then deploy:
+
+```bash
+docker compose up -d --build
+docker compose logs -f app
+```
+
+The app reads `.env` then `.env.local` and connects to `postgres:5432`. Compose
+substitution of `POSTGRES_*` and `APP_PORT` uses `.env` or the shell. The app runs
+migrations before starting the web server and worker, including on an existing
+database volume. Startup fails if migrations fail. Its HTTP port is bound to
+`127.0.0.1:3000` on the VPS; point your host reverse proxy (Caddy/nginx) there for
+HTTPS, and set `BETTER_AUTH_URL` to the public URL. A containerized reverse proxy
+on the same Compose network can use `app:3000` instead.
+
+The supervisor restarts a crashed worker thread with capped exponential backoff.
+On shutdown, Nitro requests a graceful worker stop and waits up to 75 seconds;
+unfinished jobs remain recoverable through pg-boss. The server's shutdown budget
+is 85 seconds and Compose allows 90 seconds. Node 24 is used in Docker; local
+execution requires Node 22.19 or newer. Without an API key, episode metadata
+still imports and embeddings remain retryable. Recreate the app container after
+changing its environment.
+
+For a local production run, execute `pnpm build && pnpm start` from the project
+root. This also applies migrations before starting the server. Development uses
+a thread-local TypeScript loader; production executes the bundled JavaScript
+worker directly. Set `PODCAST_WORKER_ENABLED=false` to disable automatic ingestion
+for tests or local debugging (the Playwright server does this). Compose enables
+the worker explicitly.
+
+### Incremental behavior and load limits
+
+- Shared public feed records prevent duplicate imports across users. User
+  categories remain separate. Refreshing stops when no users follow a feed.
+- Episode identity is the feed plus GUID, falling back to enclosure URL, episode
+  link, or publication date plus title. Repeated RSS items are upserted.
+- **Only unembedded episodes call the embedding API.** Completed vectors remain
+  unchanged on scheduled refreshes, including when an existing episode's title
+  or description is edited. Display metadata still updates. Pending/failed
+  episodes can adopt corrected text and retry; a hash guard rejects stale results.
+- RSS items disappearing from a rolling feed remain in the database. Initial
+  imports cover the available feed and supported `atom:link rel="next"` archive
+  pages, bounded to 20 pages and 10 MiB per page.
+- Episode titles prefer `itunes:title`; descriptions prefer substantive HTML
+  show notes, then description/summary. HTML is converted to text; recognizable
+  promotional paragraphs and credits are removed. Original descriptions/HTML
+  remain available. Duplicate description variants are not concatenated.
+- Each episode uses one combined title/description vector from OpenAI
+  `text-embedding-3-small` (1,536 dimensions). Inputs are conservatively bounded
+  to 7,500 UTF-8 bytes; full cleaned text is stored separately. The exact input,
+  hash, model, preprocessing version, and timestamp are persisted.
+- Feed sync and embedding queues deduplicate queued/active work per feed or
+  episode. Defaults are **one feed sync and one embedding batch at a time**.
+  Transactions import at most 50 episodes, and an embedding batch holds at most
+  16 inputs. Every worker polls at bounded intervals rather than spawning a
+  task per followed podcast.
+- Jobs retry five times with exponential backoff. Failed feed syncs and failed
+  embeddings are also eligible for later dispatch. pg-boss heartbeats and job
+  expiration recover work after worker crashes. Completed embeddings are skipped
+  on redelivery; an interrupted API request may still incur a repeated provider
+  call before its result is committed, as with any at-least-once job system.
+- The library shows import/embedding progress and the last successful feed
+  refresh. **Retry episode import** requests another attempt for a failed show.
+- Public HTTP(S) feed fetching validates redirect destinations and resolved IPs
+  at connection time, applies time/size limits, and rejects XML document entities.
+
+Configuration (per app container / worker thread):
+
+| Variable                        | Default | Allowed values |
+| ------------------------------- | ------- | -------------- |
+| `PODCAST_REFRESH_MINUTES`       | `60`    | 1–10080        |
+| `PODCAST_FEED_CONCURRENCY`      | `1`     | 1–8            |
+| `PODCAST_EMBEDDING_CONCURRENCY` | `1`     | 1–8            |
+| `PODCAST_EMBEDDING_BATCH_SIZE`  | `16`    | 1–32           |
+
+Increasing app replicas multiplies embedding API concurrency. Feed and
+episode deduplication remains enforced by the database. Model changes or
+re-embedding completed episodes require an explicit reindex migration; ordinary
+RSS refreshes never do that automatically. Vector search should use the same
+model and cosine distance; an HNSW index can be added when query volume warrants it.
+
+### Ingestion tests
+
+`pnpm test` includes parser, normalization, and public-address validation tests.
+Run the durable ingestion tests against a dedicated database on the pgvector
+service:
+
+```bash
+docker compose -f docker-compose.dev.yml exec -T postgres createdb -U podcast_checker podcast_checker_ingestion_test
+PODCAST_TEST_DATABASE_URL=postgresql://podcast_checker:podcast_checker@localhost:5432/podcast_checker_ingestion_test pnpm exec vitest run src/lib/podcast-ingestion.integration.test.ts
+```
+
+The integration suite applies migrations, uses real PostgreSQL/pgvector and
+pg-boss, and mocks RSS/embedding providers to avoid API costs. It checks new-only
+embedding, repeated syncs, retries, stale results, conditional requests, archive
+retention, unfollowing, and durable queue deduplication. It removes its own test
+records and queue schema afterward.
+
 ## File naming
 
 - React component files use PascalCase, such as `PodcastSearch.tsx` and `PasswordInput.tsx`.
@@ -140,11 +302,14 @@ If you prefer not to use Tailwind CSS:
 This project uses Nitro as a generic server adapter, so it can run on any Node-compatible host.
 
 ```bash
-npm run build
-node dist/server/index.mjs
+pnpm build
+pnpm start
 ```
 
-The build output is a self-contained Node server. To deploy, push the `dist/` directory to your host (Render, Fly.io, your own VPS, etc.) and run the server command above.
+For the VPS deployment, use the Docker Compose instructions above. A manual Node
+deployment needs `.output/` and `drizzle/` in the working directory, with database
+and API credentials supplied through the environment. The server starts its
+background worker thread automatically.
 
 For host-specific presets (Vercel, Netlify, Cloudflare, AWS Lambda, etc.) and tuning, see https://v3.nitro.build/deploy.
 
@@ -229,7 +394,7 @@ Compilation turns existing translations into JavaScript functions; it does not t
 The app persists Better Auth users, accounts, and sessions through Drizzle and
 PostgreSQL. Start Docker Desktop before initializing the database.
 
-The `postgres` service uses PostgreSQL 18, a health check, and the persistent
+The `postgres` service uses PostgreSQL 18 with pgvector, a health check, and the persistent
 `postgres18_data` volume mounted at `/var/lib/postgresql`, following the
 PostgreSQL 18 image’s storage layout. It listens on `127.0.0.1:5432` with the local development defaults
 `podcast_checker` for the database, username, and password.
@@ -240,7 +405,8 @@ Set this value in your existing `.env.local`:
 DATABASE_URL=postgresql://podcast_checker:podcast_checker@localhost:5432/podcast_checker
 ```
 
-See `.env.example` for the app’s other environment variables. The app and Drizzle
+See the deployment and ingestion sections above for the app's other environment
+variables. The app and Drizzle
 CLI both load `.env.local` and `.env`, preserving values already set in the
 process environment. Compose defaults can be overridden using `POSTGRES_DB`,
 `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_PORT` in your shell or `.env`;
@@ -249,7 +415,8 @@ update `DATABASE_URL` to match any overrides.
 Start PostgreSQL and run the app:
 
 ```bash
-docker compose up -d --wait postgres
+docker compose -f docker-compose.dev.yml up -d --wait postgres
+pnpm db:migrate
 pnpm dev
 ```
 
@@ -270,7 +437,8 @@ pnpm db:setup
 pnpm dev
 ```
 
-`db:setup` waits for PostgreSQL to become healthy, then runs `db:migrate`.
+`db:setup` starts only PostgreSQL through `docker-compose.dev.yml`, waits for it
+to become healthy, then runs `db:migrate`.
 The initial migration in `drizzle/0000_auth.sql` creates the user, account,
 session, and verification tables, including their constraints and indexes.
 
@@ -282,8 +450,10 @@ pnpm db:migrate
 ```
 
 Restart the app after changing `.env.local`. Check the database with
-`docker compose ps` or `docker compose logs postgres`. Use `docker compose stop`
-to stop it while keeping its data.
+`docker compose -f docker-compose.dev.yml ps` or
+`docker compose -f docker-compose.dev.yml logs postgres`. Use
+`docker compose -f docker-compose.dev.yml stop postgres` to stop it while keeping
+its data. The full Docker deployment uses `docker compose up -d --build` instead.
 
 ### Authentication validation
 

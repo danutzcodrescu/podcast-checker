@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useHydrated } from '@tanstack/react-router'
 import { LoaderCircle, Search, X } from 'lucide-react'
 import { useRef, useState } from 'react'
-import type { FormEvent, ReactNode } from 'react'
+import type { SubmitEvent, ReactNode } from 'react'
 
 import { Button } from '#/components/ui/Button'
 import { PodcastCard } from '#/components/PodcastCard'
@@ -40,7 +40,7 @@ export function PodcastSearch({
     refetchOnWindowFocus: false,
   })
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     const query = term.trim()
     if (!query || isFetching) return

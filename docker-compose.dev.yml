@@ -1,0 +1,9 @@
+services:
+  postgres:
+    # Reuse the database configuration without including the app/build service.
+    extends:
+      file: docker-compose.yml
+      service: postgres
+
+volumes:
+  postgres18_data:

@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm'
 import { db } from '../src/db/index'
 import { user as users } from '../src/db/auth-schema'
 import { followedPodcast, podcastCategory } from '../src/db/library-schema'
+import { podcastFeed } from '../src/db/ingestion-schema'
 
 test.afterAll(async () => {
   await db.$client.end()
@@ -16,13 +17,14 @@ test('persists category edits and unfollowing, with account-isolated libraries a
   baseURL,
 }) => {
   const userIds: string[] = []
+  const feedUrl = `https://example.com/library-${randomUUID()}.xml`
   const otherContext = await browser.newContext({ baseURL })
   const podcast = {
     id: 123,
     title: 'Library test podcast',
     publisher: 'Test publisher',
     appleUrl: 'https://podcasts.apple.com/podcast/id123',
-    feedUrl: null,
+    feedUrl,
     artworkUrl: null,
   }
   try {
@@ -60,6 +62,15 @@ test('persists category edits and unfollowing, with account-isolated libraries a
     await editor.getByRole('button', { name: 'Save categories' }).click()
     await expect(editor).toHaveCount(0)
     await expect(sidebar.getByRole('button', { name: 'Development 1' })).toBeVisible()
+    await expect(results.getByText(/Episode import queued/)).toBeVisible()
+    const [followed] = await db
+      .select()
+      .from(followedPodcast)
+      .where(eq(followedPodcast.userId, userIds[0]))
+    expect(followed.feedId).not.toBeNull()
+    const [feed] = await db.select().from(podcastFeed).where(eq(podcastFeed.url, feedUrl))
+    expect(feed.id).toBe(followed.feedId)
+    expect(feed.status).toBe('queued')
 
     await page.reload()
     await sidebar.getByRole('button', { name: 'Development 1' }).click()
@@ -120,5 +131,6 @@ test('persists category edits and unfollowing, with account-isolated libraries a
   } finally {
     await otherContext.close()
     await Promise.all(userIds.filter(Boolean).map((id) => db.delete(users).where(eq(users.id, id))))
+    await db.delete(podcastFeed).where(eq(podcastFeed.url, feedUrl))
   }
 })

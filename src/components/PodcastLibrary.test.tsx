@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   save: vi.fn(),
   unfollow: vi.fn(),
   create: vi.fn(),
+  retry: vi.fn(),
 }))
 vi.mock('@tanstack/react-router', () => ({ useHydrated: () => true }))
 vi.mock('#/lib/podcast-search', () => ({ searchPodcasts: mocks.search }))
@@ -24,6 +25,7 @@ vi.mock('#/lib/podcast-library', () => ({
   saveFollowedPodcast: mocks.save,
   unfollowPodcast: mocks.unfollow,
   createPodcastCategory: mocks.create,
+  retryPodcastIngestion: mocks.retry,
 }))
 
 const podcast: Podcast = {
@@ -74,6 +76,48 @@ beforeEach(() => {
 })
 
 describe('podcast library', () => {
+  it('shows ingestion progress and retries failed imports', async () => {
+    const withFeed = { ...podcast, feedUrl: 'https://example.com/rss' }
+    const failed: Library = {
+      ...empty,
+      podcasts: [
+        {
+          podcast: withFeed,
+          categories: [],
+          sync: {
+            status: 'ready',
+            episodes: 20,
+            embedded: 12,
+            failed: 8,
+            lastSyncedAt: null,
+          },
+        },
+      ],
+    }
+    mocks.load.mockResolvedValue(failed)
+    mocks.retry.mockResolvedValue({
+      ...failed,
+      podcasts: [
+        {
+          ...failed.podcasts[0],
+          sync: {
+            ...failed.podcasts[0].sync,
+            status: 'queued',
+            failed: 0,
+          },
+        },
+      ],
+    })
+    const user = userEvent.setup()
+    renderLibrary()
+    await user.click(await screen.findByRole('button', { name: 'Followed podcasts 1' }))
+    expect(screen.getByText(/20 imported · 12 embedded/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Retry episode import' }))
+    expect(mocks.retry).toHaveBeenCalledWith({ data: podcast.id })
+    expect(await screen.findByText(/Episode import queued/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Retry episode import' })).not.toBeInTheDocument()
+  })
+
   it('follows a search result without tags and restores saved following state on remount', async () => {
     const saved: Library = { ...empty, podcasts: [{ podcast, categories: [] }] }
     mocks.save.mockResolvedValue(saved)

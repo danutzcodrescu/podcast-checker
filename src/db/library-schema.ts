@@ -1,6 +1,16 @@
-import { bigint, jsonb, pgTable, primaryKey, text, timestamp } from 'drizzle-orm/pg-core'
+import {
+  bigint,
+  index,
+  jsonb,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uuid,
+} from 'drizzle-orm/pg-core'
 
 import { user } from './auth-schema'
+import { podcastFeed } from './ingestion-schema'
 import type { Podcast } from '#/lib/apple-podcasts'
 
 export const followedPodcast = pgTable(
@@ -11,10 +21,14 @@ export const followedPodcast = pgTable(
       .references(() => user.id, { onDelete: 'cascade' }),
     podcastId: bigint('podcast_id', { mode: 'number' }).notNull(),
     podcast: jsonb('podcast').$type<Podcast>().notNull(),
+    feedId: uuid('feed_id').references(() => podcastFeed.id),
     categories: text('categories').array().notNull().default([]),
     followedAt: timestamp('followed_at').defaultNow().notNull(),
   },
-  (table) => [primaryKey({ columns: [table.userId, table.podcastId] })],
+  (table) => [
+    primaryKey({ columns: [table.userId, table.podcastId] }),
+    index('followed_podcast_feed_idx').on(table.feedId),
+  ],
 )
 
 export const podcastCategory = pgTable(

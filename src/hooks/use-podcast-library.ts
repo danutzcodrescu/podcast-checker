@@ -6,21 +6,25 @@ import type { Podcast } from '#/lib/apple-podcasts'
 import {
   createPodcastCategory,
   getPodcastLibrary,
+  retryPodcastIngestion,
   saveFollowedPodcast,
   unfollowPodcast,
 } from '#/lib/podcast-library'
 import type { PodcastLibrary } from '#/lib/podcast-library'
+import type { PodcastSync } from '#/lib/podcast-sync'
 
 type Operation =
   | { type: 'save'; podcast: Podcast; categories: string[] }
   | { type: 'unfollow'; id: number }
   | { type: 'category'; name: string }
+  | { type: 'retry'; id: number }
 
 export type LibraryPodcast = {
   podcast: Podcast
   categoryIds: string[]
   categoryNames: string[]
   searchFields: string[]
+  sync?: PodcastSync | null
 }
 
 const emptyLibrary: PodcastLibrary = { podcasts: [], categories: [] }
@@ -40,6 +44,7 @@ export function usePodcastLibrary(email: string) {
     queryFn: () => getPodcastLibrary(),
     enabled: hydrated,
     retry: false,
+    refetchInterval: 15_000,
   })
   const {
     mutateAsync,
@@ -52,6 +57,7 @@ export function usePodcastLibrary(email: string) {
           data: { podcast: operation.podcast, categories: operation.categories },
         })
       if (operation.type === 'unfollow') return unfollowPodcast({ data: operation.id })
+      if (operation.type === 'retry') return retryPodcastIngestion({ data: operation.id })
       return createPodcastCategory({ data: operation.name })
     },
     onSuccess: async (library) => {
@@ -63,24 +69,27 @@ export function usePodcastLibrary(email: string) {
   const indexes = useMemo(() => {
     const categories = data.categories.map((category) => ({ ...category, count: 0 }))
     const categoryById = new Map(categories.map((category) => [category.id, category]))
-    const podcasts: LibraryPodcast[] = data.podcasts.map(({ podcast, categories: categoryIds }) => {
-      const categoryNames: string[] = []
-      for (const id of new Set(categoryIds)) {
-        const category = categoryById.get(id)
-        if (category) {
-          category.count += 1
-          categoryNames.push(category.name)
+    const podcasts: LibraryPodcast[] = data.podcasts.map(
+      ({ podcast, categories: categoryIds, sync }) => {
+        const categoryNames: string[] = []
+        for (const id of new Set(categoryIds)) {
+          const category = categoryById.get(id)
+          if (category) {
+            category.count += 1
+            categoryNames.push(category.name)
+          }
         }
-      }
-      return {
-        podcast,
-        categoryIds,
-        categoryNames,
-        searchFields: [podcast.title, podcast.publisher, ...categoryNames].map((value) =>
-          value.toLowerCase(),
-        ),
-      }
-    })
+        return {
+          podcast,
+          sync,
+          categoryIds,
+          categoryNames,
+          searchFields: [podcast.title, podcast.publisher, ...categoryNames].map((value) =>
+            value.toLowerCase(),
+          ),
+        }
+      },
+    )
     const podcastById = new Map(podcasts.map((item) => [item.podcast.id, item]))
     return { podcasts, categories, categoryById, podcastById }
   }, [data])
@@ -104,6 +113,7 @@ export function usePodcastLibrary(email: string) {
   )
   const unfollow = useCallback((id: number) => run({ type: 'unfollow', id }), [run])
   const createCategory = useCallback((name: string) => run({ type: 'category', name }), [run])
+  const retryIngestion = useCallback((id: number) => run({ type: 'retry', id }), [run])
   const getCategories = useCallback(
     (podcast: Podcast) => indexes.podcastById.get(podcast.id)?.categoryNames ?? emptyCategories,
     [indexes],
@@ -126,6 +136,7 @@ export function usePodcastLibrary(email: string) {
     savePodcast,
     unfollow,
     createCategory,
+    retryIngestion,
     getCategories,
     isFollowed,
     getCategoryName,
