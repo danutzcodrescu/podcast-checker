@@ -57,11 +57,14 @@ function renderLibrary() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: Infinity } },
   })
-  return render(
-    <QueryClientProvider client={client}>
-      <LibraryTestPage />
-    </QueryClientProvider>,
-  )
+  return {
+    ...render(
+      <QueryClientProvider client={client}>
+        <LibraryTestPage />
+      </QueryClientProvider>,
+    ),
+    client,
+  }
 }
 
 async function search(user: ReturnType<typeof userEvent.setup>) {
@@ -175,6 +178,37 @@ describe('podcast library', () => {
     expect(screen.getByRole('heading', { name: 'Search podcasts' })).toBeVisible()
     expect(screen.getByRole('searchbox', { name: 'Search podcasts' })).toHaveValue('syntax')
   })
+
+  it.each(['web', 'Web'])(
+    'keeps a locally created tag unique and selected when a refresh includes "%s"',
+    async (savedName) => {
+      mocks.save.mockResolvedValue(empty)
+      const user = userEvent.setup()
+      const { client } = renderLibrary()
+      const results = await search(user)
+      await user.click(within(results).getByRole('button', { name: 'Add tags to Syntax' }))
+      const editor = screen.getByRole('dialog', { name: 'Add to categories' })
+      await user.type(within(editor).getByRole('searchbox'), 'web{Enter}')
+
+      act(() => {
+        client.setQueryData(['podcast-library', 'listener@example.com'], {
+          ...empty,
+          categories: [{ id: 'web', name: savedName }],
+        })
+      })
+
+      await waitFor(() => {
+        expect(within(editor).getAllByRole('checkbox')).toHaveLength(1)
+        expect(within(editor).getByRole('checkbox', { name: 'web' })).toBeChecked()
+      })
+      await user.click(within(editor).getByRole('checkbox', { name: 'web' }))
+      expect(within(editor).getByRole('checkbox', { name: 'web' })).not.toBeChecked()
+      await user.type(within(editor).getByRole('searchbox'), 'WEB{Enter}')
+      expect(within(editor).getByRole('checkbox', { name: 'web' })).toBeChecked()
+      await user.click(within(editor).getByRole('button', { name: 'Follow & save' }))
+      expect(mocks.save).toHaveBeenCalledWith({ data: { podcast, categories: ['web'] } })
+    },
+  )
 
   it('filters by category names and publishers while keeping full-library category counts', async () => {
     const webPodcast: Podcast = { ...podcast, id: 789, title: 'Web platform' }

@@ -1,6 +1,8 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "home_page": "Home page",
+  "not_found_heading": "Page not found",
+  "not_found_description": "The page you’re looking for doesn’t exist.",
   "about_page": "About page",
   "example_message": "Welcome to your i18n app.",
   "language_label": "Language",

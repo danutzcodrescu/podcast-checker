@@ -15,7 +15,13 @@ export function useCategoryEditor({
   const [query, setQuery] = useState('')
   const [names, setNames] = useState(selected)
   const [created, setCreated] = useState<string[]>([])
-  const choices = [...categories.map(({ name }) => name), ...created]
+  // A library refresh can include a category created while this editor is open.
+  // Keep its local label so the current selection stays consistent.
+  const choices = [
+    ...new Map(
+      [...categories.map(({ name }) => name), ...created].map((name) => [categoryId(name), name]),
+    ).values(),
+  ]
   const normalizedQuery = categoryId(query)
   const matching = choices.filter((name) => categoryId(name).includes(normalizedQuery))
   const canCreate =

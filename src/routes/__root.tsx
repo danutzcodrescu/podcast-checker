@@ -4,6 +4,7 @@ import { TanStackDevtools } from '@tanstack/react-devtools'
 
 import TanStackQueryDevtools from '../integrations/tanstack-query/devtools'
 
+import { NotFoundPage } from '#/components/NotFoundPage'
 import { getLocale } from '#/paraglide/runtime'
 
 import appCss from '../styles.css?url'
@@ -80,6 +81,7 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
     ],
   }),
   shellComponent: RootDocument,
+  notFoundComponent: NotFoundPage,
 })
 
 function RootDocument({ children }: { children: React.ReactNode }) {
