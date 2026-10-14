@@ -1,12 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import { useHydrated } from '@tanstack/react-router'
-import { ArrowUpRight, Headphones, LoaderCircle, Search, X } from 'lucide-react'
+import { LoaderCircle, Search, X } from 'lucide-react'
 import { useRef, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { FormEvent, ReactNode } from 'react'
 
 import { Button } from '#/components/ui/Button'
+import { PodcastCard } from '#/components/PodcastCard'
 import type { Podcast } from '#/lib/apple-podcasts'
-import { getPodcastArtworkSrcSet } from '#/lib/podcast-artwork'
 import { searchPodcasts } from '#/lib/podcast-search'
 import { m } from '#/paraglide/messages'
 
@@ -15,31 +15,13 @@ const searchStateClassName =
 const searchStateIconClassName =
   'mb-1 grid size-16 place-items-center rounded-full bg-surface-muted text-surface-muted-foreground'
 
-function PodcastArtwork({ podcast }: { podcast: Podcast }) {
-  const [failed, setFailed] = useState(false)
-  return (
-    <div className="grid size-artwork shrink-0 basis-artwork place-items-center overflow-hidden rounded-lg bg-surface-muted text-surface-muted-foreground tablet:row-span-2 mobile:size-artwork-mobile">
-      {podcast.artworkUrl && !failed ? (
-        <img
-          className="size-full object-cover"
-          src={podcast.artworkUrl}
-          srcSet={getPodcastArtworkSrcSet(podcast.artworkUrl)}
-          sizes="(max-width: 480px) 80px, 112px"
-          alt=""
-          width={112}
-          height={112}
-          loading="lazy"
-          decoding="async"
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <Headphones className="size-10" aria-hidden="true" />
-      )}
-    </div>
-  )
-}
-
-export function PodcastSearch() {
+export function PodcastSearch({
+  renderActions,
+  getCategories,
+}: {
+  renderActions?: (podcast: Podcast) => ReactNode
+  getCategories?: (podcast: Podcast) => string[]
+}) {
   const hydrated = useHydrated()
   const [term, setTerm] = useState('')
   const [submittedTerm, setSubmittedTerm] = useState('')
@@ -109,7 +91,11 @@ export function PodcastSearch() {
               </button>
             )}
           </div>
-          <Button className="w-auto min-w-32" disabled={!hydrated || !term.trim() || isFetching}>
+          <Button
+            type="submit"
+            className="w-auto min-w-32"
+            disabled={!hydrated || !term.trim() || isFetching}
+          >
             {isFetching && <LoaderCircle className="size-5 animate-spin" aria-hidden="true" />}
             {m.search_button()}
           </Button>
@@ -183,31 +169,12 @@ export function PodcastSearch() {
         {!isFetching && !isError && submittedTerm && podcasts && podcasts.length > 0 && (
           <ul className="m-0 grid list-none gap-3 p-0" aria-label={m.search_results_label()}>
             {podcasts.map((podcast) => (
-              <li
+              <PodcastCard
                 key={podcast.id}
-                className="flex items-center gap-6 rounded-xl border border-card-border bg-surface p-4 pr-5 [contain-intrinsic-block-size:auto_var(--spacing-artwork)] [content-visibility:auto] tablet:grid tablet:grid-cols-[auto_minmax(0,1fr)] tablet:gap-x-4 tablet:gap-y-2 mobile:gap-x-3 mobile:p-3 mobile:[contain-intrinsic-block-size:auto_var(--spacing-artwork-mobile)]"
-              >
-                <PodcastArtwork podcast={podcast} />
-                <div className="min-w-0 flex-1 wrap-anywhere">
-                  <h2 className="m-0 text-lg leading-snug font-bold tracking-tight mobile:text-base">
-                    {podcast.title}
-                  </h2>
-                  {podcast.publisher && (
-                    <p className="mt-2 text-sm leading-snug text-muted-foreground">
-                      {podcast.publisher}
-                    </p>
-                  )}
-                </div>
-                <a
-                  className="inline-flex items-center gap-1.5 text-sm leading-snug text-link no-underline hover:underline hover:underline-offset-4 tablet:col-start-2"
-                  href={podcast.appleUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {m.search_view_podcast()}{' '}
-                  <ArrowUpRight className="size-4 shrink-0" aria-hidden="true" />
-                </a>
-              </li>
+                podcast={podcast}
+                categories={getCategories?.(podcast)}
+                actions={renderActions?.(podcast)}
+              />
             ))}
           </ul>
         )}

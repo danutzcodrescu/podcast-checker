@@ -1,10 +1,11 @@
 import { Link, useNavigate } from '@tanstack/react-router'
-import { useReducer } from 'react'
+import { useReducer, useState } from 'react'
 
 import { AppHeader } from '#/components/AppHeader'
 import { AccountMenu } from '#/components/AccountMenu'
 import { PageShell } from '#/components/PageShell'
-import { PodcastSearch } from '#/components/PodcastSearch'
+import { PodcastLibrary } from '#/components/PodcastLibrary'
+import type { PodcastLibraryFilter } from '#/components/PodcastLibrary'
 import { authClient } from '#/lib/auth-client'
 import { m } from '#/paraglide/messages'
 
@@ -12,6 +13,7 @@ type SignOutState = { pending: boolean; error: string }
 
 export function DiscoverPage({ email }: { email: string }) {
   const navigate = useNavigate()
+  const [libraryFilter, setLibraryFilter] = useState<PodcastLibraryFilter>(null)
   const [{ pending, error }, updateState] = useReducer(
     (state: SignOutState, update: Partial<SignOutState>) => ({ ...state, ...update }),
     { pending: false, error: '' },
@@ -42,6 +44,7 @@ export function DiscoverPage({ email }: { email: string }) {
           <Link
             className="border-b-3 border-primary px-1 py-4 text-sm font-semibold text-foreground no-underline"
             to="/"
+            onClick={() => setLibraryFilter(null)}
             aria-current="page"
           >
             {m.search_discover_tab()}
@@ -49,7 +52,7 @@ export function DiscoverPage({ email }: { email: string }) {
         </nav>
         <AccountMenu email={email} pending={pending} onSignOut={signOut} />
       </AppHeader>
-      <main className="mx-auto mt-14 max-w-6xl tablet:mt-9">
+      <main className="mx-auto mt-10 max-w-7xl tablet:mt-9">
         {error && (
           <p
             className="mb-6 rounded-lg bg-destructive-soft px-4 py-3 text-sm text-destructive"
@@ -58,7 +61,7 @@ export function DiscoverPage({ email }: { email: string }) {
             {error}
           </p>
         )}
-        <PodcastSearch />
+        <PodcastLibrary email={email} filter={libraryFilter} onFilterChange={setLibraryFilter} />
       </main>
     </PageShell>
   )

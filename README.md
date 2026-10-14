@@ -38,14 +38,11 @@ npm run build
 - `pnpm test:e2e` runs the Playwright starter suite and starts the app automatically.
 - `pnpm test:e2e:ui` opens Playwright’s interactive test runner.
 
-Component tests cover email-only sign-up, sign-in/sign-out navigation, form state,
-and localized errors. The starter end-to-end suite covers unauthenticated route
-protection, navigation, English/French localization, and mobile layout. It mocks
-failed sign-in requests so it does not need a database or real user accounts.
-
-Successful authentication is covered with mocked auth responses in component
-tests. As features grow, extend `e2e/auth.spec.ts` with seeded database accounts
-to exercise real successful sign-up, sign-in, and sign-out end to end.
+Component tests cover authentication, podcast search, following, category
+assignment and filtering, retryable errors, and English/French localization.
+The end-to-end suite also checks database-backed library persistence, account
+isolation, keyboard controls, and mobile layout. Run `pnpm db:setup` first;
+library tests create temporary accounts and remove them after each test.
 
 ## Logo and browser icons
 
@@ -78,12 +75,30 @@ required. The catalog currently uses the US storefront.
 Results show artwork, podcast titles, publishers, and links to Apple Podcasts.
 Loading, empty, and retryable error states are available in English and French.
 TanStack Query caches searches for five minutes. Each result also includes its
-Apple collection ID and RSS feed URL to support a future follow feature.
-
-Off-screen result cards use `content-visibility: auto` with remembered intrinsic
-heights to defer browser rendering. Artwork is lazy-loaded and decoded
+Apple collection ID and RSS feed URL. Artwork is lazy-loaded and decoded
 asynchronously; Apple CDN images use responsive sources matched to the card size
 and screen pixel density.
+
+## Following and organizing podcasts
+
+- Click **Follow** on a search result to save it to your account’s library.
+- **Add tags** opens a category picker. Choose existing categories or type a
+  name and click **Create**, then **Follow & save** to follow and categorize
+  the podcast together. Followed podcasts offer **Edit tags** instead.
+  Pressing **Enter** in the picker selects an exact match (or the first filtered
+  match), or creates and selects a new category if there are no matches. The
+  input clears so you can add another tag before saving.
+- The **Followed podcasts** sidebar lists saved shows and their category badges.
+  Click its heading to view the whole library, a show to view that podcast,
+  or a category to filter the library. The text filter matches show titles,
+  publishers, and category names.
+- **New category** creates a category without assigning a podcast. Category
+  counts reflect followed shows; names are unique per account regardless of case.
+- Clicking **Following** unfollows the podcast. Existing categories remain available.
+
+Libraries and categories are stored in PostgreSQL and scoped to the authenticated
+user. Apply `drizzle/0001_podcast_library.sql` with `pnpm db:migrate` when upgrading
+an existing database (or use `pnpm db:setup` to start PostgreSQL and migrate).
 
 ## File naming
 
@@ -95,6 +110,11 @@ and screen pixel density.
 ## Styling
 
 This project uses [Tailwind CSS](https://tailwindcss.com/) for styling.
+
+Shared shadcn/ui components use [Base UI](https://base-ui.com/react/) primitives.
+`components.json` selects the `base-nova` preset for future component generation.
+Compose triggers and close controls with `render={<Button />}`. Popovers and menus
+use a portal, positioner, and popup; their viewport sizing uses `--available-height`.
 
 - Use Tailwind's spacing, typography, and radius scales for component styles
   (`gap-4`, `px-6`, `text-lg`, `rounded-lg`) instead of one-off pixel values.

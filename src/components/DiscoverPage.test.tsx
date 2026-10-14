@@ -5,9 +5,16 @@ import type { ComponentPropsWithoutRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { DiscoverPage } from '#/components/DiscoverPage'
+import type { Podcast } from '#/lib/apple-podcasts'
 import * as localeRuntime from '#/paraglide/runtime'
 
-const mocks = vi.hoisted(() => ({ navigate: vi.fn(), signOut: vi.fn(), setLocale: vi.fn() }))
+const mocks = vi.hoisted(() => ({
+  navigate: vi.fn(),
+  signOut: vi.fn(),
+  setLocale: vi.fn(),
+  search: vi.fn(),
+  load: vi.fn(),
+}))
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ to, children, ...props }: ComponentPropsWithoutRef<'a'> & { to: string }) => (
@@ -20,7 +27,13 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 vi.mock('#/lib/auth-client', () => ({ authClient: { signOut: mocks.signOut } }))
-vi.mock('#/lib/podcast-search', () => ({ searchPodcasts: vi.fn() }))
+vi.mock('#/lib/podcast-search', () => ({ searchPodcasts: mocks.search }))
+vi.mock('#/lib/podcast-library', () => ({
+  getPodcastLibrary: mocks.load,
+  saveFollowedPodcast: vi.fn(),
+  unfollowPodcast: vi.fn(),
+  createPodcastCategory: vi.fn(),
+}))
 
 function renderPage() {
   return render(
@@ -33,6 +46,8 @@ function renderPage() {
 beforeEach(() => {
   mocks.signOut.mockResolvedValue({ error: null })
   mocks.navigate.mockResolvedValue(undefined)
+  mocks.load.mockResolvedValue({ podcasts: [], categories: [] })
+  mocks.search.mockResolvedValue([])
   vi.spyOn(localeRuntime, 'setLocale').mockImplementation(mocks.setLocale)
 })
 
@@ -53,9 +68,58 @@ describe('discover page', () => {
     expect(discover).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('heading', { name: 'Search podcasts' })).toBeInTheDocument()
     expect(screen.getByRole('searchbox', { name: 'Search podcasts' })).toBeEnabled()
-    expect(screen.queryByRole('heading', { name: 'Categories' })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Categories' })).toBeInTheDocument()
     expect(within(navigation).queryByText('Latest episodes')).not.toBeInTheDocument()
   })
+
+  it.each([
+    { view: 'category', button: 'Development 1' },
+    { view: 'podcast', button: /^Syntax/ },
+    { view: 'all followed podcasts', button: 'Followed podcasts 1' },
+  ])(
+    'returns from the $view view to Discover without discarding the search',
+    async ({ button }) => {
+      const podcast: Podcast = {
+        id: 123,
+        title: 'Syntax',
+        publisher: 'Wes & Scott',
+        appleUrl: 'https://podcasts.apple.com/podcast/id123',
+        feedUrl: null,
+        artworkUrl: null,
+      }
+      mocks.search.mockResolvedValue([podcast])
+      mocks.load.mockResolvedValue({
+        podcasts: [{ podcast, categories: ['development'] }],
+        categories: [{ id: 'development', name: 'Development' }],
+      })
+      const user = userEvent.setup()
+      renderPage()
+      const searchInput = screen.getByRole('searchbox', { name: 'Search podcasts' })
+      await user.type(searchInput, 'syntax{Enter}')
+      await screen.findByRole('list', { name: 'Podcast search results' })
+      await user.type(searchInput, ' draft')
+      const sidebar = screen.getByRole('complementary')
+      await user.click(within(sidebar).getByRole('button', { name: button }))
+      expect(screen.getByRole('list', { name: 'Followed podcast results' })).toBeVisible()
+      expect(searchInput).not.toBeVisible()
+
+      await user.click(screen.getByRole('link', { name: 'Discover' }))
+
+      expect(searchInput).toBeVisible()
+      expect(searchInput).toHaveValue('syntax draft')
+      const results = screen.getByRole('list', { name: 'Podcast search results' })
+      expect(within(results).getByRole('heading', { name: 'Syntax' })).toBeVisible()
+      expect(
+        screen.queryByRole('list', { name: 'Followed podcast results' }),
+      ).not.toBeInTheDocument()
+      expect(within(sidebar).getByRole('button', { name: button })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      )
+      expect(mocks.search).toHaveBeenCalledOnce()
+      expect(mocks.load).toHaveBeenCalledOnce()
+    },
+  )
 
   it('shows the authenticated account and navigates to sign-in after signing out', async () => {
     const user = userEvent.setup()
