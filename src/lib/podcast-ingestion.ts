@@ -186,6 +186,8 @@ export async function processEpisodeEmbeddings(jobs: EmbeddingJob[], signal?: Ab
           jobs.map((job) => job.episodeId),
         ),
         ne(episodeEmbedding.status, 'ready'),
+        eq(episodeEmbedding.model, embeddingModel),
+        eq(episodeEmbedding.preprocessingVersion, preprocessingVersion),
         hasFollowers(podcastEpisode.feedId),
       ),
     )
@@ -199,6 +201,8 @@ export async function processEpisodeEmbeddings(jobs: EmbeddingJob[], signal?: Ab
     and(
       eq(episodeEmbedding.episodeId, row.episodeId),
       eq(episodeEmbedding.contentHash, row.contentHash),
+      eq(episodeEmbedding.model, embeddingModel),
+      eq(episodeEmbedding.preprocessingVersion, preprocessingVersion),
       ne(episodeEmbedding.status, 'ready'),
     )
   try {
@@ -249,6 +253,8 @@ export async function getDueIngestion() {
     .where(
       and(
         ne(episodeEmbedding.status, 'ready'),
+        eq(episodeEmbedding.model, embeddingModel),
+        eq(episodeEmbedding.preprocessingVersion, preprocessingVersion),
         sql`${episodeEmbedding.nextAttemptAt} <= now()`,
         hasFollowers(podcastEpisode.feedId),
       ),

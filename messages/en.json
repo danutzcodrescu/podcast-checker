@@ -150,5 +150,21 @@
   "episodes_error": "Unable to load episodes. Please try again.",
   "episodes_empty_heading": "No episodes yet",
   "episodes_empty_filters": "No episodes match these filters. Try a wider date range, or check back while your podcasts finish importing.",
-  "episodes_load_more": "Load more episodes"
+  "episodes_load_more": "Load more episodes",
+  "episodes_search_label": "Search episodes",
+  "episodes_search_placeholder": "Search titles, descriptions, or an idea…",
+  "episodes_search_clear": "Clear episode search",
+  "episodes_search_mode": "Episode search mode",
+  "episodes_search_hybrid": "Text + semantic",
+  "episodes_search_text": "Title & description",
+  "episodes_search_semantic": "Semantic (embeddings)",
+  "episodes_search_help": "Search your followed episodes by words or meaning. Podcast, tag and date filters apply; choose All time to search older episodes. Semantic search uses completed embeddings.",
+  "episodes_search_results": "Search results",
+  "episodes_search_count": "{count} episodes matching “{term}”",
+  "episodes_relevance": "Most relevant",
+  "episodes_semantic_match": "Semantic match",
+  "episodes_semantic_unavailable": "Semantic search is temporarily unavailable. Showing title and description matches.",
+  "episodes_semantic_error": "Unable to run semantic search. Check the server’s Cloudflare Workers AI configuration or try again, or use Title & description search.",
+  "episodes_search_empty": "No episodes found for “{term}”",
+  "episodes_search_empty_hint": "Try different words or a wider date range. Semantic search finds episodes once their embeddings are ready; text search also covers episodes still being indexed."
 }

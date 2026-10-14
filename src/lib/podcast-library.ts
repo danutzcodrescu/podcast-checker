@@ -169,9 +169,35 @@ export const unfollowPodcast = createServerFn({ method: 'POST' })
   .validator(podcastIdInput)
   .handler(async ({ context, data }) => {
     const userId = context.session.user.id
-    await db
-      .delete(followedPodcast)
-      .where(and(eq(followedPodcast.userId, userId), eq(followedPodcast.podcastId, data)))
+    await db.transaction(async (tx) => {
+      const [followed] = await tx
+        .select({ feedId: followedPodcast.feedId })
+        .from(followedPodcast)
+        .where(and(eq(followedPodcast.userId, userId), eq(followedPodcast.podcastId, data)))
+      // Follow also locks the feed before changing the library. Serialize cleanup
+      // on that same row so concurrent follows/unfollows cannot leave an orphan.
+      if (followed?.feedId) {
+        await tx
+          .select({ id: podcastFeed.id })
+          .from(podcastFeed)
+          .where(eq(podcastFeed.id, followed.feedId))
+          .for('update')
+      }
+      const [removed] = await tx
+        .delete(followedPodcast)
+        .where(and(eq(followedPodcast.userId, userId), eq(followedPodcast.podcastId, data)))
+        .returning({ feedId: followedPodcast.feedId })
+      if (!removed?.feedId) return
+      // Existing foreign-key cascades delete the feed's episodes and embeddings.
+      await tx
+        .delete(podcastFeed)
+        .where(
+          and(
+            eq(podcastFeed.id, removed.feedId),
+            sql`not exists (select 1 from ${followedPodcast} where ${followedPodcast.feedId} = ${podcastFeed.id})`,
+          ),
+        )
+    })
     return readLibrary(userId)
   })
 

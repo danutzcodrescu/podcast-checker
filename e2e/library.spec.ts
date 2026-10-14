@@ -5,11 +5,37 @@ import { eq } from 'drizzle-orm'
 import { db } from '../src/db/index'
 import { user as users } from '../src/db/auth-schema'
 import { followedPodcast, podcastCategory } from '../src/db/library-schema'
-import { podcastFeed } from '../src/db/ingestion-schema'
+import { episodeEmbedding, podcastEpisode, podcastFeed } from '../src/db/ingestion-schema'
+import { embeddingDimensions, embeddingModel, preprocessingVersion } from '../src/lib/episode-text'
 
 test.afterAll(async () => {
   await db.$client.end()
 })
+
+async function seedEpisode(feedId: string) {
+  const [episode] = await db
+    .insert(podcastEpisode)
+    .values({
+      feedId,
+      key: 'cascade-test',
+      title: 'An episode to remove',
+      embeddingTitle: 'An episode to remove',
+      description: 'Cascade cleanup test.',
+      cleanedDescription: 'Cascade cleanup test.',
+    })
+    .returning({ id: podcastEpisode.id })
+  await db.insert(episodeEmbedding).values({
+    episodeId: episode.id,
+    input: 'An episode to remove',
+    contentHash: 'cascade-test',
+    model: embeddingModel,
+    preprocessingVersion,
+    status: 'ready',
+    embedding: Array.from({ length: embeddingDimensions }, (_, index) => (index === 0 ? 1 : 0)),
+    embeddedAt: new Date(),
+  })
+  return episode.id
+}
 
 test('persists category edits and unfollowing, with account-isolated libraries and responsive controls', async ({
   page,
@@ -72,6 +98,28 @@ test('persists category edits and unfollowing, with account-isolated libraries a
     expect(feed.id).toBe(followed.feedId)
     expect(feed.status).toBe('queued')
 
+    // Reassigning an existing tag must reuse its row, including after a reload.
+    /* eslint-disable no-await-in-loop -- Each edit must finish before reloading and editing again. */
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await results.getByRole('button', { name: 'Edit tags for Library test podcast' }).click()
+      await expect(editor.getByRole('checkbox', { name: 'Development' })).toBeChecked()
+      await editor.getByRole('button', { name: 'Save categories' }).click()
+      await expect(editor).toHaveCount(0)
+      expect(
+        await db.select().from(podcastCategory).where(eq(podcastCategory.userId, userIds[0])),
+      ).toEqual([{ userId: userIds[0], id: 'development', name: 'Development' }])
+      const [saved] = await db
+        .select({ categories: followedPodcast.categories })
+        .from(followedPodcast)
+        .where(eq(followedPodcast.userId, userIds[0]))
+      expect(saved.categories).toEqual(['development'])
+      await page.reload()
+      await sidebar.getByRole('button', { name: 'Followed podcasts 1' }).click()
+    }
+    /* eslint-enable no-await-in-loop */
+
+    const episodeId = await seedEpisode(feed.id)
+
     await page.reload()
     await sidebar.getByRole('button', { name: 'Development 1' }).click()
     await expect(page.getByRole('heading', { name: 'Development' })).toBeVisible()
@@ -100,6 +148,13 @@ test('persists category edits and unfollowing, with account-isolated libraries a
     await results.getByRole('button', { name: 'Unfollow Library test podcast' }).click()
     await expect(sidebar.getByRole('button', { name: 'Followed podcasts 0' })).toBeVisible()
     await expect(sidebar.getByRole('button', { name: 'Development 0' })).toBeVisible()
+    expect(await db.select().from(podcastFeed).where(eq(podcastFeed.id, feed.id))).toHaveLength(0)
+    expect(
+      await db.select().from(podcastEpisode).where(eq(podcastEpisode.feedId, feed.id)),
+    ).toHaveLength(0)
+    expect(
+      await db.select().from(episodeEmbedding).where(eq(episodeEmbedding.episodeId, episodeId)),
+    ).toHaveLength(0)
     await page.reload()
     await expect(sidebar.getByRole('button', { name: 'Followed podcasts 0' })).toBeVisible()
 
@@ -132,5 +187,76 @@ test('persists category edits and unfollowing, with account-isolated libraries a
     await otherContext.close()
     await Promise.all(userIds.filter(Boolean).map((id) => db.delete(users).where(eq(users.id, id))))
     await db.delete(podcastFeed).where(eq(podcastFeed.url, feedUrl))
+  }
+})
+
+test('keeps a shared feed until its last catalog entry is unfollowed, then cascades episodes and embeddings', async ({
+  page,
+}) => {
+  let userId = ''
+  let feedId = ''
+  try {
+    const response = await page.request.post('/api/auth/sign-up/email', {
+      data: {
+        email: `cascade-${randomUUID()}@example.com`,
+        name: 'Cascade test',
+        password: 'test-password-123',
+      },
+    })
+    expect(response.ok()).toBe(true)
+    const { user } = await response.json()
+    userId = user.id
+    const [feed] = await db
+      .insert(podcastFeed)
+      .values({ url: `https://example.com/cascade-${randomUUID()}.xml`, status: 'ready' })
+      .returning()
+    feedId = feed.id
+    await db.insert(followedPodcast).values(
+      [123, 124].map((id) => ({
+        userId,
+        feedId,
+        podcastId: id,
+        categories: [],
+        podcast: {
+          id,
+          title: `Cascade show ${id}`,
+          publisher: '',
+          appleUrl: `https://podcasts.apple.com/podcast/id${id}`,
+          feedUrl: feed.url,
+          artworkUrl: null,
+        },
+      })),
+    )
+    const episodeId = await seedEpisode(feedId)
+    await page.goto('/discover')
+    const sidebar = page.getByRole('complementary')
+    await sidebar.getByRole('button', { name: 'Followed podcasts 2', exact: true }).click()
+    const results = page.getByRole('list', { name: 'Followed podcast results' })
+    await results.getByRole('button', { name: 'Unfollow Cascade show 123', exact: true }).click()
+    await expect(
+      sidebar.getByRole('button', { name: 'Followed podcasts 1', exact: true }),
+    ).toBeVisible()
+    expect(await db.select().from(podcastFeed).where(eq(podcastFeed.id, feedId))).toHaveLength(1)
+    expect(
+      await db.select().from(podcastEpisode).where(eq(podcastEpisode.feedId, feedId)),
+    ).toHaveLength(1)
+    expect(
+      await db.select().from(episodeEmbedding).where(eq(episodeEmbedding.episodeId, episodeId)),
+    ).toHaveLength(1)
+
+    await results.getByRole('button', { name: 'Unfollow Cascade show 124', exact: true }).click()
+    await expect(
+      sidebar.getByRole('button', { name: 'Followed podcasts 0', exact: true }),
+    ).toBeVisible()
+    expect(await db.select().from(podcastFeed).where(eq(podcastFeed.id, feedId))).toHaveLength(0)
+    expect(
+      await db.select().from(podcastEpisode).where(eq(podcastEpisode.feedId, feedId)),
+    ).toHaveLength(0)
+    expect(
+      await db.select().from(episodeEmbedding).where(eq(episodeEmbedding.episodeId, episodeId)),
+    ).toHaveLength(0)
+  } finally {
+    if (userId) await db.delete(users).where(eq(users.id, userId))
+    if (feedId) await db.delete(podcastFeed).where(eq(podcastFeed.id, feedId))
   }
 })

@@ -74,7 +74,7 @@ export const episodeEmbedding = pgTable(
     contentHash: text('content_hash').notNull(),
     model: text('model').notNull(),
     preprocessingVersion: integer('preprocessing_version').notNull(),
-    embedding: vector('embedding', { dimensions: 1536 }),
+    embedding: vector('embedding', { dimensions: 1024 }),
     status: text('status').$type<'pending' | 'ready' | 'failed'>().default('pending').notNull(),
     lastError: text('last_error'),
     nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).defaultNow().notNull(),

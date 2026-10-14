@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ComponentPropsWithoutRef } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -94,9 +94,100 @@ describe('latest episodes page', () => {
         categoryId: null,
         days: 7,
         sort: 'newest',
+        term: '',
+        searchMode: 'hybrid',
         offset: 25,
       },
     })
+  })
+
+  it('searches on submission, preserves relevance across dates, and clears back to browsing', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByRole('heading', { name: 'JavaScript patterns' })
+    const input = screen.getByRole('searchbox', { name: 'Search episodes' })
+    await user.type(input, 'async code')
+    expect(mocks.episodes).toHaveBeenCalledOnce()
+    mocks.episodes.mockResolvedValue({
+      episodes: [
+        {
+          ...episode,
+          id: 'older',
+          title: 'Promises explained',
+          publishedAt: '2020-01-01T12:00:00Z',
+          matchType: 'semantic',
+        },
+        { ...episode, id: 'newer', title: 'Async code examples', matchType: 'text' },
+      ],
+      total: 2,
+      nextOffset: null,
+      semanticUnavailable: false,
+    })
+    await user.keyboard('{Enter}')
+    const results = await screen.findByRole('region', { name: 'Search results' })
+    expect(
+      within(results)
+        .getAllByRole('heading', { level: 3 })
+        .map((heading) => heading.textContent),
+    ).toEqual(['Promises explained', 'Async code examples'])
+    expect(within(results).getByText('Semantic match')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Sort episodes' })).toHaveValue('relevance')
+    expect(mocks.episodes).toHaveBeenLastCalledWith({
+      data: {
+        podcastId: null,
+        categoryId: null,
+        days: 7,
+        sort: 'relevance',
+        term: 'async code',
+        searchMode: 'hybrid',
+        offset: 0,
+      },
+    })
+    const calls = mocks.episodes.mock.calls.length
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Episode search mode' }), 'text')
+    expect(mocks.episodes).toHaveBeenCalledTimes(calls)
+    mocks.episodes.mockResolvedValue({ episodes: [episode], total: 1, nextOffset: null })
+    await user.click(screen.getByRole('button', { name: 'Clear episode search' }))
+    await screen.findByRole('heading', { name: 'JavaScript patterns' })
+    expect(input).toHaveValue('')
+    expect(input).toHaveFocus()
+    expect(screen.getByRole('combobox', { name: 'Sort episodes' })).toHaveValue('newest')
+    expect(screen.queryByRole('region', { name: 'Search results' })).not.toBeInTheDocument()
+  })
+
+  it('explains hybrid fallback and supports retrying a failed semantic search', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByRole('heading', { name: 'JavaScript patterns' })
+    mocks.episodes.mockResolvedValue({
+      episodes: [episode],
+      total: 1,
+      nextOffset: null,
+      semanticUnavailable: true,
+    })
+    await user.type(screen.getByRole('searchbox', { name: 'Search episodes' }), 'patterns{Enter}')
+    expect(
+      await screen.findByText(
+        'Semantic search is temporarily unavailable. Showing title and description matches.',
+      ),
+    ).toBeInTheDocument()
+    mocks.episodes.mockRejectedValueOnce(new Error('Provider unavailable'))
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: 'Episode search mode' }),
+      'semantic',
+    )
+    await user.click(screen.getByRole('button', { name: /^Search$/ }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Unable to run semantic search.')
+    mocks.episodes.mockResolvedValue({
+      episodes: [{ ...episode, matchType: 'semantic' }],
+      total: 1,
+      nextOffset: null,
+      semanticUnavailable: false,
+    })
+    await user.click(within(alert).getByRole('button', { name: 'Try again' }))
+    await screen.findByText('Semantic match')
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
   })
 
   it('provides a Discover link when the account follows no podcasts', async () => {

@@ -150,5 +150,21 @@
   "episodes_error": "Impossible de charger les épisodes. Veuillez réessayer.",
   "episodes_empty_heading": "Aucun épisode pour le moment",
   "episodes_empty_filters": "Aucun épisode ne correspond à ces filtres. Essayez une période plus large ou revenez une fois l’importation de vos podcasts terminée.",
-  "episodes_load_more": "Charger plus d’épisodes"
+  "episodes_load_more": "Charger plus d’épisodes",
+  "episodes_search_label": "Rechercher des épisodes",
+  "episodes_search_placeholder": "Rechercher un titre, une description ou une idée…",
+  "episodes_search_clear": "Effacer la recherche d’épisodes",
+  "episodes_search_mode": "Mode de recherche des épisodes",
+  "episodes_search_hybrid": "Texte + sémantique",
+  "episodes_search_text": "Titre et description",
+  "episodes_search_semantic": "Sémantique (vecteurs)",
+  "episodes_search_help": "Recherchez dans vos épisodes suivis par mots ou par sens. Les filtres de podcast, de tag et de date s’appliquent ; choisissez Toutes les dates pour les épisodes plus anciens. La recherche sémantique utilise les vecteurs prêts.",
+  "episodes_search_results": "Résultats de recherche",
+  "episodes_search_count": "{count} épisodes correspondant à « {term} »",
+  "episodes_relevance": "Les plus pertinents",
+  "episodes_semantic_match": "Correspondance sémantique",
+  "episodes_semantic_unavailable": "La recherche sémantique est temporairement indisponible. Les résultats correspondent aux titres et descriptions.",
+  "episodes_semantic_error": "Impossible d’effectuer la recherche sémantique. Vérifiez la configuration Cloudflare Workers AI du serveur ou réessayez, ou utilisez la recherche Titre et description.",
+  "episodes_search_empty": "Aucun épisode trouvé pour « {term} »",
+  "episodes_search_empty_hint": "Essayez d’autres mots ou une période plus large. La recherche sémantique trouve les épisodes dont les vecteurs sont prêts ; la recherche textuelle inclut aussi les épisodes en cours d’indexation."
 }

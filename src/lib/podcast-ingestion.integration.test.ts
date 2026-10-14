@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import { eq, inArray } from 'drizzle-orm'
 import { migrate } from 'drizzle-orm/node-postgres/migrator'
 import { PgBoss } from 'pg-boss'
@@ -9,6 +10,7 @@ import { user } from '../db/auth-schema'
 import { episodeEmbedding, podcastEpisode, podcastFeed } from '../db/ingestion-schema'
 import { followedPodcast } from '../db/library-schema'
 import { parseRss } from './rss-parser'
+import { embeddingContent, embeddingDimensions, embeddingModel } from './episode-text'
 
 const mocks = vi.hoisted(() => ({ embed: vi.fn(), fetch: vi.fn() }))
 vi.mock('./episode-embeddings', () => ({ embedEpisodes: mocks.embed }))
@@ -19,7 +21,7 @@ const userId = randomUUID()
 const feedIds: string[] = []
 let db: (typeof import('../db/index'))['db']
 let ingestion: typeof import('./podcast-ingestion')
-const vector = Array.from({ length: 1536 }, (_, index) => (index === 0 ? 1 : 0))
+const vector = Array.from({ length: embeddingDimensions }, (_, index) => (index === 0 ? 1 : 0))
 const xml = (guid: string, description = 'The history of Britain.') =>
   `<rss version="2.0"><channel><title>History</title><item><guid>${guid}</guid><title>Britain</title><description>${description}</description></item></channel></rss>`
 
@@ -74,6 +76,48 @@ describe.runIf(!!testUrl)('durable incremental ingestion', () => {
     await db.delete(user).where(eq(user.id, userId))
     if (feedIds.length) await db.delete(podcastFeed).where(inArray(podcastFeed.id, feedIds))
     await db.$client.end()
+  })
+
+  it('migrates old vectors and failed inputs to pending Cloudflare embeddings with matching hashes', async () => {
+    const client = await db.$client.connect()
+    const schema = `migration_${randomUUID().replaceAll('-', '')}`
+    const input = embeddingContent('History', 'Britain’s past.').input
+    try {
+      await client.query('BEGIN')
+      await client.query(`CREATE SCHEMA "${schema}"`)
+      await client.query(`SET LOCAL search_path TO "${schema}", public`)
+      await client.query(`CREATE TABLE episode_embedding (
+        episode_id uuid PRIMARY KEY, input text NOT NULL, content_hash text NOT NULL,
+        model text NOT NULL, preprocessing_version integer NOT NULL,
+        embedding vector(1536), status text NOT NULL, last_error text,
+        next_attempt_at timestamptz NOT NULL, embedded_at timestamptz
+      )`)
+      await client.query(
+        `INSERT INTO episode_embedding VALUES
+        ($1, $3, 'old-hash', 'text-embedding-3-small', 1, $4::vector, 'ready', NULL, now() + interval '1 hour', now()),
+        ($2, $3, 'old-hash', 'text-embedding-3-small', 1, NULL, 'failed', 'HTTP 429', now() + interval '1 hour', NULL)`,
+        [randomUUID(), randomUUID(), input, JSON.stringify(Array.from({ length: 1536 }, () => 1))],
+      )
+      await client.query(await readFile('./drizzle/0003_cloudflare_embeddings.sql', 'utf8'))
+      const { rows } = await client.query(
+        "SELECT *, format_type(a.atttypid, a.atttypmod) AS vector_type FROM episode_embedding, pg_attribute a WHERE a.attrelid = 'episode_embedding'::regclass AND a.attname = 'embedding'",
+      )
+      expect(rows).toHaveLength(2)
+      for (const row of rows)
+        expect(row).toMatchObject({
+          input,
+          model: embeddingModel,
+          content_hash: embeddingContent('History', 'Britain’s past.').hash,
+          vector_type: 'vector(1024)',
+          embedding: null,
+          embedded_at: null,
+          last_error: null,
+          status: 'pending',
+        })
+    } finally {
+      await client.query('ROLLBACK')
+      client.release()
+    }
   })
 
   it('embeds only new episodes across repeated syncs, edits, and redelivered jobs', async () => {

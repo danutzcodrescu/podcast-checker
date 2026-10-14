@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto'
 import { convert } from 'html-to-text'
 
-export const embeddingModel = 'text-embedding-3-small'
-export const embeddingDimensions = 1536
+export const embeddingModel = '@cf/qwen/qwen3-embedding-0.6b'
+export const embeddingDimensions = 1024
 export const preprocessingVersion = 1
 
 export function plainText(value: string) {

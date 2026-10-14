@@ -4,6 +4,7 @@ import { ChevronDown, LoaderCircle, RefreshCw } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import { CategoryBadge, PodcastArtwork } from '#/components/PodcastCard'
+import { EpisodeSearchForm } from '#/components/EpisodeSearchForm'
 import type { PodcastLibraryFilter } from '#/components/PodcastLibrary'
 import { PodcastLibrarySidebar } from '#/components/PodcastLibrarySidebar'
 import { PodcastPageShell } from '#/components/PodcastPageShell'
@@ -61,6 +62,11 @@ function EpisodeCard({
               {m.episodes_new()}
             </span>
           )}
+          {episode.matchType === 'semantic' && (
+            <span className="rounded-full bg-purple-100 px-2.5 py-0.5 text-xs text-purple-900">
+              {m.episodes_semantic_match()}
+            </span>
+          )}
         </div>
         <h3 className="text-lg leading-snug font-bold tracking-tight mobile:text-base">
           {episode.title}
@@ -100,6 +106,8 @@ export function LatestEpisodesPage({ email }: { email: string }) {
     categoryId: null,
     days: 7,
     sort: 'newest',
+    term: '',
+    searchMode: 'hybrid',
   })
   const normalizedTerm = term.trim().toLowerCase()
   const matches = useMemo(
@@ -134,21 +142,26 @@ export function LatestEpisodesPage({ email }: { email: string }) {
     getNextPageParam: (page) => page.nextOffset,
     enabled: !library.disabled,
     retry: false,
-    refetchInterval: 30_000,
+    refetchInterval: filters.term ? false : 30_000,
+    refetchOnWindowFocus: !filters.term,
+    staleTime: filters.term ? 5 * 60_000 : 0,
   })
   const locale = getLocale()
   const groups = useMemo(() => {
     const result = new Map<string, LatestEpisode[]>()
     for (const page of episodes.data?.pages ?? []) {
       for (const episode of page.episodes) {
-        const label = dayLabel(episode.publishedAt, locale, episodes.dataUpdatedAt)
+        const label =
+          filters.term && filters.sort === 'relevance'
+            ? m.episodes_search_results()
+            : dayLabel(episode.publishedAt, locale, episodes.dataUpdatedAt)
         const group = result.get(label) ?? []
         group.push(episode)
         result.set(label, group)
       }
     }
     return [...result.entries()]
-  }, [episodes.data, episodes.dataUpdatedAt, locale])
+  }, [episodes.data, episodes.dataUpdatedAt, locale, filters.term, filters.sort])
 
   return (
     <PodcastPageShell email={email} activeTab="latest-episodes">
@@ -185,6 +198,34 @@ export function LatestEpisodesPage({ email }: { email: string }) {
               />
             </Button>
           </div>
+          <EpisodeSearchForm
+            active={Boolean(filters.term)}
+            pending={episodes.isFetching}
+            disabled={library.disabled}
+            onSearch={(query, searchMode) => {
+              if (
+                filters.term === query &&
+                filters.searchMode === searchMode &&
+                filters.sort === 'relevance'
+              ) {
+                void episodes.refetch()
+              } else {
+                setFilters((current) => ({
+                  ...current,
+                  term: query,
+                  searchMode,
+                  sort: 'relevance',
+                }))
+              }
+            }}
+            onClear={() =>
+              setFilters((current) => ({
+                ...current,
+                term: '',
+                sort: current.sort === 'relevance' ? 'newest' : current.sort,
+              }))
+            }
+          />
           {library.isSaveError && (
             <p className="mb-4 rounded-lg bg-destructive-soft p-3 text-destructive" role="alert">
               {m.library_save_error()}
@@ -255,7 +296,13 @@ export function LatestEpisodesPage({ email }: { email: string }) {
           </div>
           <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
             <output className="text-muted-foreground" aria-live="polite">
-              {episodes.data && m.episodes_count({ count: episodes.data.pages[0].total })}
+              {episodes.data &&
+                (filters.term
+                  ? m.episodes_search_count({
+                      count: episodes.data.pages[0].total,
+                      term: filters.term,
+                    })
+                  : m.episodes_count({ count: episodes.data.pages[0].total }))}
             </output>
             <label>
               <span className="sr-only">{m.episodes_sort()}</span>
@@ -268,14 +315,24 @@ export function LatestEpisodesPage({ email }: { email: string }) {
                   }))
                 }
               >
+                {filters.term && <option value="relevance">{m.episodes_relevance()}</option>}
                 <option value="newest">{m.episodes_newest()}</option>
                 <option value="oldest">{m.episodes_oldest()}</option>
               </NativeSelect>
             </label>
           </div>
+          {filters.term && episodes.data?.pages[0].semanticUnavailable && (
+            <output className="mb-4 block rounded-lg bg-accent p-3 text-sm">
+              {m.episodes_semantic_unavailable()}
+            </output>
+          )}
           {episodes.isError && (
             <div className="mb-4 rounded-lg bg-destructive-soft p-4" role="alert">
-              <p className="text-destructive">{m.episodes_error()}</p>
+              <p className="text-destructive">
+                {filters.term && filters.searchMode === 'semantic'
+                  ? m.episodes_semantic_error()
+                  : m.episodes_error()}
+              </p>
               <Button
                 variant="ghost"
                 size="sm"
@@ -316,11 +373,17 @@ export function LatestEpisodesPage({ email }: { email: string }) {
                 ))}
                 {groups.length === 0 && !episodes.isError && (
                   <div className="rounded-xl border border-border bg-surface p-8 text-center">
-                    <h2 className="text-lg font-bold">{m.episodes_empty_heading()}</h2>
+                    <h2 className="text-lg font-bold">
+                      {filters.term
+                        ? m.episodes_search_empty({ term: filters.term })
+                        : m.episodes_empty_heading()}
+                    </h2>
                     <p className="mt-2 leading-relaxed text-muted-foreground">
-                      {library.podcasts.length
-                        ? m.episodes_empty_filters()
-                        : m.library_follow_hint()}
+                      {filters.term
+                        ? m.episodes_search_empty_hint()
+                        : library.podcasts.length
+                          ? m.episodes_empty_filters()
+                          : m.library_follow_hint()}
                     </p>
                     {!library.podcasts.length && (
                       <Link to="/discover" className="mt-4 inline-block text-link underline">

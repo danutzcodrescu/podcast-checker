@@ -3,34 +3,81 @@ import { z } from 'zod'
 import { embeddingDimensions, embeddingModel } from './episode-text'
 
 const embeddingResponse = z.object({
-  data: z.array(
-    z.object({
-      index: z.number().int().nonnegative(),
-      embedding: z.array(z.number()).length(embeddingDimensions),
-    }),
-  ),
+  success: z.literal(true),
+  result: z.object({
+    shape: z.tuple([z.number().int().nonnegative(), z.literal(embeddingDimensions)]),
+    data: z.array(z.array(z.number()).length(embeddingDimensions)),
+  }),
 })
 
-export async function embedEpisodes(inputs: string[], signal?: AbortSignal): Promise<number[][]> {
-  const key = process.env.OPENAI_API_KEY
-  if (!key) throw new Error('OPENAI_API_KEY is required by the podcast worker')
-  const timeout = AbortSignal.timeout(60_000)
-  const response = await fetch('https://api.openai.com/v1/embeddings', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: embeddingModel, dimensions: embeddingDimensions, input: inputs }),
-    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-  })
-  // Do not persist upstream error bodies, which may include request content.
-  if (!response.ok) throw new Error(`Embedding request failed (HTTP ${response.status})`)
-  const { data } = embeddingResponse.parse(await response.json())
-  const indexed = new Map(data.map((item) => [item.index, item.embedding]))
-  if (
-    data.length !== inputs.length ||
-    indexed.size !== inputs.length ||
-    inputs.some((_, index) => !indexed.has(index))
-  ) {
-    throw new Error('Embedding response did not match the requested episodes')
+export function cloudflareEmbeddingsConfigured() {
+  return (
+    /^[a-f0-9]{32}$/i.test(process.env.CLOUDFLARE_ACCOUNT_ID?.trim() ?? '') &&
+    Boolean(process.env.CLOUDFLARE_API_TOKEN?.trim())
+  )
+}
+
+const providerError = z.object({
+  success: z.boolean().optional(),
+  errors: z.array(z.object({ code: z.number().int() })).optional(),
+})
+
+export async function embedEpisodes(
+  inputs: string[],
+  signal?: AbortSignal,
+  purpose: 'document' | 'query' = 'document',
+): Promise<number[][]> {
+  if (!inputs.length) return []
+  z.array(z.string().min(1)).max(32).parse(inputs)
+  if (!cloudflareEmbeddingsConfigured()) {
+    throw new Error(
+      'A valid CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are required for embeddings',
+    )
   }
-  return inputs.map((_, index) => indexed.get(index)!)
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID!.trim()
+  const token = process.env.CLOUDFLARE_API_TOKEN!.trim()
+  const timeout = AbortSignal.timeout(60_000)
+  const response = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${embeddingModel}`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(
+        purpose === 'query'
+          ? {
+              queries: inputs,
+              instruction:
+                'Given a podcast search query, retrieve relevant podcast episodes based on their titles and descriptions.',
+            }
+          : { documents: inputs },
+      ),
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+    },
+  )
+  const body: unknown = await response.json().catch(() => null)
+  const failure = providerError.safeParse(body)
+  if (!response.ok || (failure.success && failure.data.success === false)) {
+    // Retain numeric error codes for diagnostics, never raw messages or bodies.
+    const code = failure.success ? failure.data.errors?.[0]?.code : undefined
+    const reason =
+      code === 3036
+        ? 'daily free neuron allowance exhausted; resets at 00:00 UTC'
+        : code === 3040
+          ? 'model temporarily out of capacity'
+          : response.status === 401 || response.status === 403
+            ? 'check Cloudflare account and Workers AI token permissions'
+            : response.status === 429
+              ? 'rate limit or allowance reached'
+              : null
+    throw new Error(
+      `Cloudflare embedding request failed (HTTP ${response.status}${code !== undefined ? `; code ${code}` : ''})${reason ? `: ${reason}` : ''}`,
+    )
+  }
+  const parsed = embeddingResponse.safeParse(body)
+  if (!parsed.success) throw new Error('Cloudflare returned an invalid embedding response')
+  const { data, shape } = parsed.data.result
+  if (data.length !== inputs.length || shape[0] !== inputs.length) {
+    throw new Error('Cloudflare embedding response did not match the requested inputs')
+  }
+  return data
 }

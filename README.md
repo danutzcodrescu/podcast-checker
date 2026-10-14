@@ -100,7 +100,10 @@ and screen pixel density.
   publishers, and category names.
 - **New category** creates a category without assigning a podcast. Category
   counts reflect followed shows; names are unique per account regardless of case.
-- Clicking **Following** unfollows the podcast. Existing categories remain available.
+- Clicking **Following** unfollows the podcast. When its last follow is removed,
+  its feed, imported episodes, and embeddings are deleted together using database
+  cascades. Following it again starts a fresh import and vectorization.
+  Existing categories remain available.
 
 Libraries and categories are stored in PostgreSQL and scoped to the authenticated
 user. Apply `drizzle/0001_podcast_library.sql` with `pnpm db:migrate` when upgrading
@@ -118,6 +121,32 @@ titles, publication time, duration, a description preview, and the podcast’s t
 - **Refresh episodes** reloads the stored episodes and library. The list also
   refreshes every 30 seconds while background imports run.
 - Episodes with no publication date appear under **Unknown date** in **All time**.
+
+### Episode search
+
+Use **Search episodes** on Latest episodes and press Enter or **Search**:
+
+- **Text + semantic** (default) combines title/description matches with embedding
+  similarity, including episodes whose wording differs from your query.
+- **Title & description** searches full stored titles and cleaned descriptions,
+  including episodes that have not finished embedding. It supports literal text
+  and full-text word matching, and does not call an embedding API.
+- **Semantic (embeddings)** embeds your query with the same Cloudflare Workers AI
+  `@cf/qwen/qwen3-embedding-0.6b` model and 1,024 dimensions used for episodes, then ranks compatible, ready vectors
+  by pgvector cosine similarity. Results below 0.3 cosine similarity are excluded.
+
+Search respects podcast, tag, and date filters; choose **All time** to include
+older episodes. Searches initially use **Most relevant** sorting; you can switch
+to publication-date ordering. Clearing search returns to the episode list.
+Semantic-only matches are labeled in results.
+
+Semantic search uses the server’s `CLOUDFLARE_ACCOUNT_ID` and
+`CLOUDFLARE_API_TOKEN`. Episodes are sent as model documents; search queries use
+the model's query input and a podcast-retrieval instruction. Query vectors are
+cached for five minutes in a bounded in-memory cache to avoid repeated embedding
+calls during pagination and filtering. Searches run on submission and do not poll.
+If the embedding provider is unavailable, combined search shows text results with
+an explanation; semantic-only search offers a retry or text search instead.
 
 ## Background RSS ingestion and episode embeddings
 
@@ -145,7 +174,18 @@ pg-boss manages its own `pgboss` schema when the worker starts; it needs no extr
 PostgreSQL extension. The database role must be able to create that schema, and
 the migration role must be able to enable `vector`.
 
-1. Add `OPENAI_API_KEY` to `.env.local`.
+1. Add your Cloudflare Workers AI credentials to `.env.local`:
+
+   ```dotenv
+   CLOUDFLARE_ACCOUNT_ID=your-32-character-account-id
+   CLOUDFLARE_API_TOKEN=your-workers-ai-api-token
+   ```
+
+   In the Cloudflare dashboard, open **Workers AI → Use REST API** to copy the
+   account ID and create a Workers AI API token. The token needs **Workers AI
+   Read** and **Workers AI Edit** access to that account. Credentials stay on the
+   server; the app calls Cloudflare's REST API directly from your machine or VPS.
+
 2. Upgrade/start PostgreSQL and apply migrations:
 
    ```bash
@@ -174,7 +214,8 @@ POSTGRES_DB=podcast_checker
 POSTGRES_PASSWORD=replace-with-your-database-password
 BETTER_AUTH_SECRET=replace-with-a-long-random-secret
 BETTER_AUTH_URL=https://podcasts.example.com
-OPENAI_API_KEY=your-openai-api-key
+CLOUDFLARE_ACCOUNT_ID=your-32-character-account-id
+CLOUDFLARE_API_TOKEN=your-workers-ai-api-token
 APP_PORT=3000
 ```
 
@@ -197,8 +238,9 @@ The supervisor restarts a crashed worker thread with capped exponential backoff.
 On shutdown, Nitro requests a graceful worker stop and waits up to 75 seconds;
 unfinished jobs remain recoverable through pg-boss. The server's shutdown budget
 is 85 seconds and Compose allows 90 seconds. Node 24 is used in Docker; local
-execution requires Node 22.19 or newer. Without an API key, episode metadata
-still imports and embeddings remain retryable. Recreate the app container after
+execution requires Node 22.19 or newer. Without valid Cloudflare credentials,
+episode metadata still imports and the embedding queue consumer is paused;
+pending episodes are retained. Recreate the app container after
 changing its environment.
 
 For a local production run, execute `pnpm build && pnpm start` from the project
@@ -211,7 +253,8 @@ the worker explicitly.
 ### Incremental behavior and load limits
 
 - Shared public feed records prevent duplicate imports across users. User
-  categories remain separate. Refreshing stops when no users follow a feed.
+  categories remain separate. Unfollowing the last entry for a feed deletes the
+  feed and cascades to its episodes and embeddings.
 - Episode identity is the feed plus GUID, falling back to enclosure URL, episode
   link, or publication date plus title. Repeated RSS items are upserted.
 - **Only unembedded episodes call the embedding API.** Completed vectors remain
@@ -225,8 +268,8 @@ the worker explicitly.
   show notes, then description/summary. HTML is converted to text; recognizable
   promotional paragraphs and credits are removed. Original descriptions/HTML
   remain available. Duplicate description variants are not concatenated.
-- Each episode uses one combined title/description vector from OpenAI
-  `text-embedding-3-small` (1,536 dimensions). Inputs are conservatively bounded
+- Each episode uses one combined title/description vector from Cloudflare Workers AI
+  `@cf/qwen/qwen3-embedding-0.6b` (1,024 dimensions). Inputs are conservatively bounded
   to 7,500 UTF-8 bytes; full cleaned text is stored separately. The exact input,
   hash, model, preprocessing version, and timestamp are persisted.
 - Feed sync and embedding queues deduplicate queued/active work per feed or
@@ -241,6 +284,9 @@ the worker explicitly.
   call before its result is committed, as with any at-least-once job system.
 - The library shows import/embedding progress and the last successful feed
   refresh. **Retry episode import** requests another attempt for a failed show.
+- Provider errors retain Cloudflare's numeric error code without raw response
+  messages: `3036` identifies an exhausted daily free neuron allowance, while
+  `3040` indicates temporary model capacity exhaustion.
 - Public HTTP(S) feed fetching validates redirect destinations and resolved IPs
   at connection time, applies time/size limits, and rejects XML document entities.
 
@@ -258,6 +304,29 @@ episode deduplication remains enforced by the database. Model changes or
 re-embedding completed episodes require an explicit reindex migration; ordinary
 RSS refreshes never do that automatically. Vector search should use the same
 model and cosine distance; an HNSW index can be added when query volume warrants it.
+
+### Cloudflare free allowance and switching existing data
+
+Workers AI includes **10,000 neurons per day** on the Free plan, resetting at
+**00:00 UTC**. The current published Qwen embedding rate is 1,075 neurons per
+million input tokens. Both background imports and semantic queries consume this
+account-level allowance. Request/capacity limits also apply. On the Free plan,
+usage beyond the allowance fails and jobs remain retryable; upgrading to Workers
+Paid enables billed usage beyond the daily free allocation. See
+[Workers AI pricing](https://developers.cloudflare.com/workers-ai/platform/pricing/)
+and the [model documentation](https://developers.cloudflare.com/workers-ai/models/qwen3-embedding-0.6b/).
+
+Migration **`0003_cloudflare_embeddings.sql`** changes the vector column from 1,536
+to 1,024 dimensions. Existing episode records and embedding input text are kept;
+old vectors are invalidated, model-aware hashes are recomputed, and embeddings
+are reset to pending for this one-time provider change. The worker uses a new
+Cloudflare embedding queue and retires waiting OpenAI jobs, preserving failed
+and completed queue history. Ordinary feed refreshes still skip completed vectors.
+
+For an existing local database, run `pnpm db:migrate` and restart `pnpm dev` after
+configuring the two Cloudflare variables. Docker applies the migration before
+starting the app automatically. The account does not need an OpenAI key or a
+Cloudflare-hosted application; PostgreSQL and the app can remain on your VPS.
 
 ### Ingestion tests
 
@@ -455,6 +524,14 @@ pnpm dev
 to become healthy, then runs `db:migrate`.
 The initial migration in `drizzle/0000_auth.sql` creates the user, account,
 session, and verification tables, including their constraints and indexes.
+
+Volumes originally created with `postgres:18-alpine` need migration
+`0004_repair_library_indexes` after switching to the Debian-based pgvector image.
+The change from musl to glibc changes text sorting, leaving old indexes unable to
+reliably find existing keys. This can allow duplicate tags despite their primary
+key and `ON CONFLICT` handling. Run `pnpm db:migrate` to merge duplicate category
+identities without changing podcast assignments and rebuild application indexes.
+The repair is transactional and locks tables while rebuilding their indexes.
 
 After changing the schema, generate and apply a new migration:
 

@@ -98,22 +98,23 @@ test('chooses the login landing page and displays only followed episodes with wo
       categories: ['development'],
     })
     const now = Date.now()
-    await db
-      .insert(podcastEpisode)
-      .values([
-        ...Array.from({ length: 26 }, (_, index) =>
-          episode(
-            feeds[0].id,
-            `Development episode ${String(index + 1).padStart(2, '0')}`,
-            new Date(now - index * 1000),
-          ),
+    await db.insert(podcastEpisode).values([
+      ...Array.from({ length: 26 }, (_, index) =>
+        episode(
+          feeds[0].id,
+          `Development episode ${String(index + 1).padStart(2, '0')}`,
+          new Date(now - index * 1000),
         ),
-        episode(feeds[1].id, 'History today', new Date(now - 60_000)),
-        episode(feeds[1].id, 'History yesterday', new Date(now - 86_400_000)),
-        episode(feeds[0].id, 'Older development episode', new Date(now - 10 * 86_400_000)),
-        episode(feeds[1].id, 'Undated history', null),
-        episode(feeds[2].id, 'Private episode', new Date(now)),
-      ])
+      ),
+      episode(feeds[1].id, 'History today', new Date(now - 60_000)),
+      episode(feeds[1].id, 'History yesterday', new Date(now - 86_400_000)),
+      {
+        ...episode(feeds[0].id, 'Older development episode', new Date(now - 10 * 86_400_000)),
+        cleanedDescription: `${'Historical context. '.repeat(40)}water transport in ancient cities`,
+      },
+      episode(feeds[1].id, 'Undated history', null),
+      episode(feeds[2].id, 'Private episode', new Date(now)),
+    ])
 
     await page.getByRole('button', { name: 'Account menu' }).click()
     await page.getByRole('menuitem', { name: 'Sign out' }).click()
@@ -192,12 +193,53 @@ test('chooses the login landing page and displays only followed episodes with wo
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true)
 
+    await page.getByRole('combobox', { name: 'Episode search mode' }).selectOption('text')
+    const search = page.getByRole('searchbox', { name: 'Search episodes', exact: true })
+    await search.fill('development episode')
+    await search.press('Enter')
+    await expect(
+      page.getByText('27 episodes matching “development episode”', { exact: true }),
+    ).toBeVisible()
+    await expect(page.getByRole('combobox', { name: 'Sort episodes' })).toHaveValue('relevance')
+    await page.getByRole('button', { name: 'Load more episodes' }).click()
+    await expect(
+      page.getByRole('heading', { name: 'Older development episode', exact: true }),
+    ).toBeVisible()
+    await search.fill('water transport')
+    await search.press('Enter')
+    await expect(
+      page.getByText('1 episodes matching “water transport”', { exact: true }),
+    ).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: 'Older development episode', exact: true }),
+    ).toBeVisible()
+    await page.getByRole('combobox', { name: 'Filter episodes by date' }).selectOption('7')
+    await expect(
+      page.getByRole('heading', { name: 'No episodes found for “water transport”', exact: true }),
+    ).toBeVisible()
+    await page.getByRole('combobox', { name: 'Filter episodes by date' }).selectOption('')
+    await expect(
+      page.getByRole('heading', { name: 'Older development episode', exact: true }),
+    ).toBeVisible()
+    await search.fill('Private episode')
+    await search.press('Enter')
+    await expect(
+      page.getByRole('heading', { name: 'No episodes found for “Private episode”', exact: true }),
+    ).toBeVisible()
+    await page.getByRole('button', { name: 'Clear episode search' }).click()
+    await expect(search).toBeFocused()
+    await expect(page.getByText('31 episodes', { exact: true })).toBeVisible()
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true)
+
     await page.getByRole('button', { name: 'Account menu' }).click()
     await page.getByRole('menuitemradio', { name: 'Français' }).click()
     await expect(page).toHaveURL('/fr/latest-episodes')
     await expect(
       page.getByRole('heading', { name: 'Derniers épisodes', exact: true }),
     ).toBeVisible()
+    await expect(page.getByRole('searchbox', { name: 'Rechercher des épisodes' })).toBeVisible()
     await page.getByRole('link', { name: 'Découvrir', exact: true }).click()
     await expect(page).toHaveURL('/fr/discover')
     await page.goto('/fr/')

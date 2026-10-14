@@ -9,6 +9,7 @@ import {
   syncPodcastFeed,
 } from '../src/lib/podcast-ingestion'
 import type { EmbeddingJob } from '../src/lib/podcast-ingestion'
+import { cloudflareEmbeddingsConfigured } from '../src/lib/episode-embeddings'
 
 config({ path: ['.env.local', '.env'], quiet: true })
 
@@ -40,7 +41,8 @@ const boss = new PgBoss({ connectionString: process.env.DATABASE_URL!, max: 10 }
 boss.on('error', (error) => console.error('Podcast queue error', error.message))
 
 const feedQueue = 'podcast-feed-sync'
-const embeddingQueue = 'podcast-episode-embed'
+const embeddingQueue = 'podcast-episode-embed-cloudflare'
+const embeddingsEnabled = cloudflareEmbeddingsConfigured()
 const dispatchQueue = 'podcast-dispatch'
 
 await boss.start()
@@ -56,6 +58,10 @@ const options = {
 await boss.createQueue(feedQueue, options)
 await boss.createQueue(embeddingQueue, options)
 await boss.createQueue(dispatchQueue, { policy: 'exclusive', retryLimit: 3, retryDelay: 5 })
+// Old OpenAI payloads have obsolete content hashes and must not hold back new jobs.
+// Keep completed/failed history, but retire waiting jobs from the previous provider.
+if (await boss.getQueue('podcast-episode-embed'))
+  await boss.deleteQueuedJobs('podcast-episode-embed')
 
 async function dispatch() {
   const { feeds, embeddings } = await getDueIngestion()
@@ -64,7 +70,7 @@ async function dispatch() {
       feedQueue,
       feeds.map((feed) => ({ data: { feedId: feed.id }, singletonKey: feed.id })),
     )
-  if (embeddings.length)
+  if (embeddingsEnabled && embeddings.length)
     await boss.insert(
       embeddingQueue,
       embeddings.map((data) => ({
@@ -81,16 +87,17 @@ await boss.work<{ feedId: string }>(
     await syncPodcastFeed(job.data.feedId, refreshMinutes, job.signal)
   },
 )
-await boss.work<EmbeddingJob>(
-  embeddingQueue,
-  { localConcurrency: embeddingConcurrency, batchSize },
-  async (jobs) => {
-    await processEpisodeEmbeddings(
-      jobs.map((job) => job.data),
-      AbortSignal.any(jobs.map((job) => job.signal)),
-    )
-  },
-)
+if (embeddingsEnabled)
+  await boss.work<EmbeddingJob>(
+    embeddingQueue,
+    { localConcurrency: embeddingConcurrency, batchSize },
+    async (jobs) => {
+      await processEpisodeEmbeddings(
+        jobs.map((job) => job.data),
+        AbortSignal.any(jobs.map((job) => job.signal)),
+      )
+    },
+  )
 await boss.work(dispatchQueue, dispatch)
 await boss.schedule(dispatchQueue, '* * * * *')
 // Fast initial ingestion; the persistent minute schedule is also a restart-safe backstop.
@@ -108,9 +115,9 @@ tick()
 console.info(
   `Podcast worker running: ${feedConcurrency} feed worker(s), ${embeddingConcurrency} embedding worker(s), batch ${batchSize}, refresh ${refreshMinutes}m`,
 )
-if (!process.env.OPENAI_API_KEY)
+if (!embeddingsEnabled)
   console.warn(
-    'OPENAI_API_KEY is missing; feeds can import, but embeddings will retry until configured',
+    'Cloudflare embeddings paused: configure CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN, then restart the app. RSS imports remain active.',
   )
 
 let stopping = false
