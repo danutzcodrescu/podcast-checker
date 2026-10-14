@@ -1,6 +1,6 @@
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { ChevronDown, LoaderCircle, RefreshCw } from 'lucide-react'
+import { Check, ChevronDown, ListPlus, LoaderCircle, RefreshCw } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import { CategoryBadge, PodcastArtwork } from '#/components/PodcastCard'
@@ -8,9 +8,12 @@ import { EpisodeSearchForm } from '#/components/EpisodeSearchForm'
 import type { PodcastLibraryFilter } from '#/components/PodcastLibrary'
 import { PodcastLibrarySidebar } from '#/components/PodcastLibrarySidebar'
 import { PodcastPageShell } from '#/components/PodcastPageShell'
+import { PocketCastsConnection, pocketCastsErrorMessage } from '#/components/PocketCastsConnection'
 import { Button } from '#/components/ui/Button'
 import { NativeSelect } from '#/components/ui/NativeSelect'
 import { usePodcastLibrary } from '#/hooks/use-podcast-library'
+import { usePocketCasts } from '#/hooks/use-pocket-casts'
+import type { PocketCastsIntegration } from '#/hooks/use-pocket-casts'
 import { getLatestEpisodes } from '#/lib/latest-episodes'
 import type { EpisodeFilters, LatestEpisode } from '#/lib/latest-episodes'
 import { m } from '#/paraglide/messages'
@@ -31,10 +34,12 @@ function EpisodeCard({
   episode,
   categories,
   now,
+  pocketCasts,
 }: {
   episode: LatestEpisode
   categories: string[]
   now: number
+  pocketCasts: PocketCastsIntegration
 }) {
   const locale = getLocale()
   const date = episode.publishedAt ? new Date(episode.publishedAt) : null
@@ -44,6 +49,9 @@ function EpisodeCard({
     recent && hoursAgo !== null
       ? new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(-hoursAgo, 'hour')
       : dayLabel(episode.publishedAt, locale, now)
+  const { connection, queue } = pocketCasts
+  const currentAction = queue.variables === episode.id
+  const queued = currentAction && queue.isSuccess
 
   return (
     <li className="flex items-start gap-5 rounded-xl border border-card-border bg-surface p-4 mobile:gap-3 mobile:p-3">
@@ -68,9 +76,33 @@ function EpisodeCard({
             </span>
           )}
         </div>
-        <h3 className="text-lg leading-snug font-bold tracking-tight mobile:text-base">
-          {episode.title}
-        </h3>
+        <div className="flex items-start justify-between gap-3">
+          <h3 className="min-w-0 flex-1 text-lg leading-snug font-bold tracking-tight mobile:text-base">
+            {episode.title}
+          </h3>
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0 mobile:size-10 mobile:p-0"
+            disabled={!connection.data || queue.isPending}
+            title={!connection.data ? m.pocket_casts_connect_hint() : m.pocket_casts_play_next()}
+            aria-label={m.pocket_casts_play_next_label({ title: episode.title })}
+            onClick={() => queue.mutate(episode.id)}
+          >
+            {currentAction && queue.isPending ? (
+              <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+            ) : queued ? (
+              <Check className="size-4" aria-hidden="true" />
+            ) : (
+              <ListPlus className="size-4" aria-hidden="true" />
+            )}
+            <span className="mobile:sr-only">
+              {currentAction && queue.isPending
+                ? m.pocket_casts_adding()
+                : m.pocket_casts_play_next()}
+            </span>
+          </Button>
+        </div>
         <p className="mt-1 text-sm text-muted-foreground">
           {date ? <time dateTime={episode.publishedAt ?? undefined}>{published}</time> : published}
           {episode.durationSeconds !== null && episode.durationSeconds > 0 && (
@@ -93,6 +125,16 @@ function EpisodeCard({
             ))}
           </div>
         )}
+        {queued && (
+          <output className="mt-2 block text-sm text-muted-foreground">
+            {m.pocket_casts_added()}
+          </output>
+        )}
+        {currentAction && queue.isError && (
+          <p className="mt-2 text-sm text-destructive" role="alert">
+            {pocketCastsErrorMessage(queue.error)}
+          </p>
+        )}
       </div>
     </li>
   )
@@ -100,6 +142,7 @@ function EpisodeCard({
 
 export function LatestEpisodesPage({ email }: { email: string }) {
   const library = usePodcastLibrary(email)
+  const pocketCasts = usePocketCasts(email)
   const [term, setTerm] = useState('')
   const [filters, setFilters] = useState<EpisodeFilters>({
     podcastId: null,
@@ -198,6 +241,7 @@ export function LatestEpisodesPage({ email }: { email: string }) {
               />
             </Button>
           </div>
+          <PocketCastsConnection integration={pocketCasts} />
           <EpisodeSearchForm
             active={Boolean(filters.term)}
             pending={episodes.isFetching}
@@ -362,6 +406,7 @@ export function LatestEpisodesPage({ email }: { email: string }) {
                           key={episode.id}
                           episode={episode}
                           now={episodes.dataUpdatedAt}
+                          pocketCasts={pocketCasts}
                           categories={episode.categories.flatMap((id) => {
                             const name = library.getCategoryName(id)
                             return name ? [name] : []

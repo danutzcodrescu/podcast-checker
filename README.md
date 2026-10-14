@@ -122,6 +122,27 @@ titles, publication time, duration, a description preview, and the podcast’s t
   refreshes every 30 seconds while background imports run.
 - Episodes with no publication date appear under **Unknown date** in **All time**.
 
+### Pocket Casts Play Next
+
+Click **Connect Pocket Casts** on Latest episodes and sign in with your Pocket
+Casts email and password. Each episode then offers **Play next in Pocket Casts**,
+which adds it immediately after the currently playing episode in your synced
+Up Next queue. The app receives the change on its next Pocket Casts sync.
+Disconnect removes the saved connection without changing your queue.
+
+This integration uses the Pocket Casts Web Player's unofficial API. It resolves
+the podcast by Apple ID and matches the episode by a unique RSS GUID, audio URL,
+or title plus publication time. Episodes unavailable in the Pocket Casts catalog
+return an error rather than queueing a guessed match. Queue updates use the
+additive Play Next endpoint, preserving the remaining queue.
+
+Apply the new database migration with `pnpm db:migrate`. Set `BETTER_AUTH_SECRET`
+to a stable secret of at least 32 characters. It also encrypts the account's access
+and refresh tokens at rest; changing it requires reconnecting Pocket Casts.
+Passwords are exchanged server-side and are never saved. Expired access tokens
+are refreshed automatically; rejected sessions prompt reconnection. Accounts
+using only Apple/Google sign-in need a Pocket Casts password for this connection.
+
 ### Episode search
 
 Use **Search episodes** on Latest episodes and press Enter or **Search**:

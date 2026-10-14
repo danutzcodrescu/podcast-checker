@@ -7,7 +7,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { LatestEpisodesPage } from '#/components/LatestEpisodesPage'
 import * as localeRuntime from '#/paraglide/runtime'
 
-const mocks = vi.hoisted(() => ({ library: vi.fn(), episodes: vi.fn() }))
+const mocks = vi.hoisted(() => ({
+  library: vi.fn(),
+  episodes: vi.fn(),
+  connection: vi.fn(),
+  connect: vi.fn(),
+  disconnect: vi.fn(),
+  queue: vi.fn(),
+}))
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ to, children, ...props }: ComponentPropsWithoutRef<'a'> & { to: string }) => (
@@ -27,6 +34,12 @@ vi.mock('#/lib/podcast-library', () => ({
   retryPodcastIngestion: vi.fn(),
 }))
 vi.mock('#/lib/latest-episodes', () => ({ getLatestEpisodes: mocks.episodes }))
+vi.mock('#/lib/pocket-casts', () => ({
+  getPocketCastsConnection: mocks.connection,
+  connectPocketCasts: mocks.connect,
+  disconnectPocketCasts: mocks.disconnect,
+  addEpisodeToPocketCasts: mocks.queue,
+}))
 
 const podcast = {
   id: 123,
@@ -56,6 +69,10 @@ function renderPage() {
 }
 
 beforeEach(() => {
+  mocks.connection.mockResolvedValue({ ok: true, data: null })
+  mocks.connect.mockResolvedValue({ ok: true, data: { email: 'pocket@example.com' } })
+  mocks.disconnect.mockResolvedValue({ ok: true, data: null })
+  mocks.queue.mockResolvedValue({ ok: true, data: null })
   mocks.library.mockResolvedValue({
     podcasts: [{ podcast, categories: ['development'] }],
     categories: [{ id: 'development', name: 'Development' }],
@@ -64,6 +81,87 @@ beforeEach(() => {
 })
 
 describe('latest episodes page', () => {
+  it('connects Pocket Casts, queues the selected episode as next, and disconnects', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    const action = await screen.findByRole('button', {
+      name: 'Play next in Pocket Casts: JavaScript patterns',
+    })
+    expect(action).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Connect Pocket Casts' }))
+    await user.type(screen.getByLabelText('Pocket Casts email'), 'pocket@example.com')
+    await user.type(screen.getByLabelText('Pocket Casts password'), 'private-password')
+    await user.click(
+      within(document.getElementById('pocket-casts-connect-form')!).getByRole('button', {
+        name: 'Connect Pocket Casts',
+      }),
+    )
+    await screen.findByText('Connected as pocket@example.com')
+    expect(mocks.connect).toHaveBeenCalledWith({
+      data: { email: 'pocket@example.com', password: 'private-password' },
+    })
+    expect(screen.queryByLabelText('Pocket Casts password')).not.toBeInTheDocument()
+    await user.click(action)
+    expect(mocks.queue).toHaveBeenCalledWith({ data: { episodeId: episode.id } })
+    expect(await within(action.closest('li')!).findByRole('status')).toHaveTextContent(
+      'Added as Play Next',
+    )
+    await user.click(screen.getByRole('button', { name: 'Disconnect' }))
+    await waitFor(() => expect(action).toBeDisabled())
+    expect(screen.queryByText('Added as Play Next', { exact: false })).not.toBeInTheDocument()
+  })
+
+  it('clears rejected passwords and explains expired queue sessions without reporting success', async () => {
+    const user = userEvent.setup()
+    mocks.connect.mockResolvedValueOnce({ ok: false, error: 'auth' })
+    renderPage()
+    await screen.findByRole('heading', { name: 'JavaScript patterns' })
+    await user.click(screen.getByRole('button', { name: 'Connect Pocket Casts' }))
+    await user.type(screen.getByLabelText('Pocket Casts email'), 'pocket@example.com')
+    const password = screen.getByLabelText('Pocket Casts password')
+    await user.type(password, 'wrong-password')
+    const submit = within(document.getElementById('pocket-casts-connect-form')!).getByRole(
+      'button',
+      { name: 'Connect Pocket Casts' },
+    )
+    await user.click(submit)
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Pocket Casts sign-in failed or expired',
+    )
+    expect(password).toHaveValue('')
+    await user.type(password, 'correct-password')
+    await user.click(submit)
+    await screen.findByText('Connected as pocket@example.com')
+    mocks.queue.mockResolvedValueOnce({ ok: false, error: 'auth' })
+    const action = screen.getByRole('button', {
+      name: 'Play next in Pocket Casts: JavaScript patterns',
+    })
+    await user.click(action)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Connect again')
+    expect(action).toBeDisabled()
+    expect(within(action.closest('li')!).queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('allows a retry after an unmatched episode and localizes the action in French', async () => {
+    localeRuntime.overwriteGetLocale(() => 'fr')
+    mocks.connection.mockResolvedValue({ ok: true, data: { email: 'pocket@example.com' } })
+    mocks.queue.mockResolvedValueOnce({ ok: false, error: 'not_found' })
+    const user = userEvent.setup()
+    renderPage()
+    const action = await screen.findByRole('button', {
+      name: 'Lire ensuite dans Pocket Casts : JavaScript patterns',
+    })
+    await waitFor(() => expect(action).toBeEnabled())
+    await user.click(action)
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Cet épisode n’a pas pu être identifié',
+    )
+    await user.click(action)
+    expect(await within(action.closest('li')!).findByRole('status')).toHaveTextContent(
+      'Ajouté en prochaine lecture',
+    )
+  })
+
   it('supports retries for the initial request and pagination without losing loaded episodes', async () => {
     mocks.episodes
       .mockRejectedValueOnce(new Error('Offline'))
