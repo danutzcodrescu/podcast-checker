@@ -62,9 +62,10 @@ emulation, including checks for logo rendering and delivery of browser icons.
 ## Authentication pages
 
 - `/signin` provides email/password authentication; `/signup` also requires password confirmation.
-- `/` is the authenticated Discover page. Its route calls a server function
-  protected by `requireAuth` middleware; anonymous visitors go to `/signin`.
-- Successful sign-in or sign-up navigates to `/`; sign-out navigates to `/signin`.
+- `/discover` and `/latest-episodes` are authenticated pages; anonymous visitors go to `/signin`.
+- Successful sign-in or sign-up navigates through `/`, which redirects to
+  `/latest-episodes` when the account follows any podcasts, and `/discover` otherwise.
+  Sign-out navigates to `/signin`.
 - English is the default locale. French routes use the `/fr` prefix, and the
   language dropdown below the form preserves the current page when switching locales.
 - Logged-in pages group language selection and sign-out in the header’s
@@ -104,6 +105,19 @@ and screen pixel density.
 Libraries and categories are stored in PostgreSQL and scoped to the authenticated
 user. Apply `drizzle/0001_podcast_library.sql` with `pnpm db:migrate` when upgrading
 an existing database (or use `pnpm db:setup` to start PostgreSQL and migrate).
+
+## Latest episodes
+
+The **Latest episodes** tab lists imported RSS episodes from the signed-in account’s
+followed podcasts, grouped by publication day. Cards show artwork, podcast and episode
+titles, publication time, duration, a description preview, and the podcast’s tags.
+
+- Filter by podcast, tag, or date range (the last seven days by default).
+- Sort newest or oldest first and load additional episodes in pages of 25.
+- Select a podcast or category in the sidebar to filter its episodes.
+- **Refresh episodes** reloads the stored episodes and library. The list also
+  refreshes every 30 seconds while background imports run.
+- Episodes with no publication date appear under **Unknown date** in **All time**.
 
 ## Background RSS ingestion and episode embeddings
 

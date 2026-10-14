@@ -81,6 +81,17 @@ export const getPodcastLibrary = createServerFn({ method: 'GET' })
   .middleware([requireAuth])
   .handler(({ context }) => readLibrary(context.session.user.id))
 
+export const getDefaultPodcastRoute = createServerFn({ method: 'GET' })
+  .middleware([requireAuth])
+  .handler(async ({ context }) => {
+    const [followed] = await db
+      .select({ id: followedPodcast.podcastId })
+      .from(followedPodcast)
+      .where(eq(followedPodcast.userId, context.session.user.id))
+      .limit(1)
+    return followed ? '/latest-episodes' : '/discover'
+  })
+
 export const saveFollowedPodcast = createServerFn({ method: 'POST' })
   .middleware([requireAuth])
   .validator(savePodcastInput)

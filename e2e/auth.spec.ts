@@ -8,6 +8,14 @@ test('protects the home page on direct requests and client navigation', async ({
   expect(response.status()).toBe(307)
   expect(response.headers().location).toBe('/signin')
 
+  await Promise.all(
+    ['/discover', '/latest-episodes'].map(async (route) => {
+      const protectedResponse = await request.get(route, { maxRedirects: 0 })
+      expect(protectedResponse.status()).toBe(307)
+      expect(protectedResponse.headers().location).toBe('/signin')
+    }),
+  )
+
   await page.goto('/')
   await expect(page.getByLabel('Email address')).toBeEnabled()
   await expect(page).toHaveURL('/signin')

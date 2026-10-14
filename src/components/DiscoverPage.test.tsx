@@ -64,12 +64,14 @@ describe('discover page', () => {
 
     const navigation = screen.getByRole('navigation', { name: 'Main navigation' })
     const discover = within(navigation).getByRole('link', { name: 'Discover' })
-    expect(discover).toHaveAttribute('href', '/')
+    expect(discover).toHaveAttribute('href', '/discover')
     expect(discover).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('heading', { name: 'Search podcasts' })).toBeInTheDocument()
     expect(screen.getByRole('searchbox', { name: 'Search podcasts' })).toBeEnabled()
     expect(screen.getByRole('heading', { name: 'Categories' })).toBeInTheDocument()
-    expect(within(navigation).queryByText('Latest episodes')).not.toBeInTheDocument()
+    const latest = within(navigation).getByRole('link', { name: 'Latest episodes' })
+    expect(latest).toHaveAttribute('href', '/latest-episodes')
+    expect(latest).not.toHaveAttribute('aria-current')
   })
 
   it.each([

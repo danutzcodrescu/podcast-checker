@@ -1,16 +1,9 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
-import { DiscoverPage } from '#/components/DiscoverPage'
-import { getAuthenticatedUser } from '#/lib/auth-middleware'
-import { m } from '#/paraglide/messages'
+import { getDefaultPodcastRoute } from '#/lib/podcast-library'
 
 export const Route = createFileRoute('/')({
-  beforeLoad: async () => ({ user: await getAuthenticatedUser() }),
-  head: () => ({ meta: [{ title: m.search_title() }] }),
-  component: Home,
+  beforeLoad: async () => {
+    throw redirect({ to: await getDefaultPodcastRoute(), replace: true })
+  },
 })
-
-function Home() {
-  const { user } = Route.useRouteContext()
-  return <DiscoverPage email={user.email} />
-}
