@@ -1,5 +1,20 @@
 import { expect, test } from '@playwright/test'
 
+for (const route of ['/signin', '/signup', '/fr/signin', '/fr/signup']) {
+  test(`enables authentication fields on a direct visit to ${route}`, async ({ page }) => {
+    await page.goto(route)
+    await Promise.all(
+      (await page.locator('form input').all()).map((input) => expect(input).toBeEnabled()),
+    )
+    await expect(page.locator('form button[type="submit"]')).toBeEnabled()
+    await page.locator('input[name="email"]').fill('listener@example.com')
+    await page.locator('input[name="password"]').fill('password123')
+    if (route.endsWith('/signup')) {
+      await page.locator('input[name="confirmPassword"]').fill('password123')
+    }
+  })
+}
+
 test('protects the home page on direct requests and client navigation', async ({
   page,
   request,

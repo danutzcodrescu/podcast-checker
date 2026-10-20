@@ -5,7 +5,7 @@ import { auth } from './auth'
 
 const mocks = vi.hoisted(() => ({ enabled: vi.fn() }))
 
-vi.mock('./feature-flags', () => ({ isFeatureEnabled: mocks.enabled }))
+vi.mock('./feature-flags.server', () => ({ isFeatureEnabled: mocks.enabled }))
 vi.mock('#/db', async () => {
   const { drizzle } = await import('drizzle-orm/node-postgres')
   const schema = await import('#/db/auth-schema')

@@ -1,3 +1,5 @@
+// oxlint-disable-next-line import/no-unassigned-import -- Prevents database code from entering the browser bundle.
+import '@tanstack/react-start/server-only'
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { config } from 'dotenv'
 import { Pool } from 'pg'

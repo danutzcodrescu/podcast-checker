@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 
 import { featureFlag } from '#/db/feature-flag-schema'
-import { getSignupEnabled, isFeatureEnabled } from './feature-flags'
+import { getSignupEnabled } from './feature-flags'
+import { isFeatureEnabled } from './feature-flags.server'
 
 const mocks = vi.hoisted(() => ({ select: vi.fn(), from: vi.fn(), where: vi.fn(), limit: vi.fn() }))
 
