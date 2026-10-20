@@ -3,10 +3,10 @@ import { defineConfig } from 'drizzle-kit'
 
 config({ path: ['.env.local', '.env'] })
 
-const databaseUrl = process.env.DATABASE_URL
+const databaseUrl = process.env.DIRECT_DATABASE_URL || process.env.DATABASE_URL
 
 if (!databaseUrl) {
-  throw new Error('DATABASE_URL must be set in .env.local, .env, or the environment')
+  throw new Error('DIRECT_DATABASE_URL or DATABASE_URL must be set')
 }
 
 export default defineConfig({

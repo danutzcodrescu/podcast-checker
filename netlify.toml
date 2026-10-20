@@ -1,0 +1,13 @@
+[build]
+command = "pnpm build:netlify"
+publish = "dist/client"
+
+[build.environment]
+NODE_VERSION = "24"
+
+[functions]
+directory = "netlify/functions"
+node_bundler = "esbuild"
+
+[functions."podcast-dispatch"]
+schedule = "*/5 * * * *"

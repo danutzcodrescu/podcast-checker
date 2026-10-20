@@ -7,6 +7,7 @@
   },
   "scripts": {
     "build": "vite build",
+    "build:netlify": "DEPLOY_TARGET=netlify vite build",
     "check": "pnpm lint && pnpm format:check",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
@@ -15,6 +16,8 @@
     "db:setup": "docker compose -f docker-compose.dev.yml up -d --wait postgres && pnpm db:migrate",
     "db:studio": "drizzle-kit studio",
     "dev": "vite dev --port 3000",
+    "dev:netlify": "DEPLOY_TARGET=netlify vite dev --port 3000",
+    "ingest:once": "tsx scripts/ingest-once.ts",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "generate-routes": "tsr generate",

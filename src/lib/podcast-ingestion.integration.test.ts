@@ -1,13 +1,18 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
-import { eq, inArray } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 import { migrate } from 'drizzle-orm/node-postgres/migrator'
 import { PgBoss } from 'pg-boss'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { user } from '../db/auth-schema'
-import { episodeEmbedding, podcastEpisode, podcastFeed } from '../db/ingestion-schema'
+import {
+  episodeEmbedding,
+  ingestionLease,
+  podcastEpisode,
+  podcastFeed,
+} from '../db/ingestion-schema'
 import { followedPodcast } from '../db/library-schema'
 import { parseRss } from './rss-parser'
 import { embeddingContent, embeddingDimensions, embeddingModel } from './episode-text'
@@ -246,6 +251,29 @@ describe.runIf(!!testUrl)('durable incremental ingestion', () => {
       await boss.stop()
       // schema is generated locally above, never from external input.
       await db.$client.query(`DROP SCHEMA "${schema}" CASCADE`)
+    }
+  })
+
+  it('leases one serverless run atomically, recovers expiry, and guards release by token', async () => {
+    const { acquireIngestionLease, releaseIngestionLease } = await import('./ingestion-lease')
+    const tokens = await Promise.all([acquireIngestionLease(), acquireIngestionLease()])
+    const token = tokens.find((value) => value !== undefined)!
+    try {
+      expect(tokens.filter(Boolean)).toHaveLength(1)
+      await releaseIngestionLease(randomUUID())
+      expect(await acquireIngestionLease()).toBeUndefined()
+      await db.update(ingestionLease).set({ expiresAt: sql`now() - interval '1 second'` })
+      const replacement = await acquireIngestionLease()
+      expect(replacement).toBeTruthy()
+      expect(replacement).not.toBe(token)
+      await releaseIngestionLease(token)
+      expect(await acquireIngestionLease()).toBeUndefined()
+      await releaseIngestionLease(replacement!)
+      const next = await acquireIngestionLease()
+      expect(next).toBeTruthy()
+      await releaseIngestionLease(next!)
+    } finally {
+      await db.delete(ingestionLease)
     }
   })
 })

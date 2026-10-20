@@ -11,6 +11,13 @@ import {
   vector,
 } from 'drizzle-orm/pg-core'
 
+// A bounded serverless run owns this lease; crashes recover after expiration.
+export const ingestionLease = pgTable('ingestion_lease', {
+  name: text('name').primaryKey(),
+  token: uuid('token').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+})
+
 export const podcastFeed = pgTable(
   'podcast_feed',
   {

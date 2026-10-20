@@ -271,6 +271,153 @@ worker directly. Set `PODCAST_WORKER_ENABLED=false` to disable automatic ingesti
 for tests or local debugging (the Playwright server does this). Compose enables
 the worker explicitly.
 
+### Deploy to Netlify with Neon
+
+There are two deployment targets; routes, server functions, authentication, and
+database schema are shared:
+
+| Target                  | Build                | Runtime / ingestion                                                          |
+| ----------------------- | -------------------- | ---------------------------------------------------------------------------- |
+| Node / Docker (default) | `pnpm build`         | Nitro server with the existing pg-boss worker thread                         |
+| Netlify                 | `pnpm build:netlify` | Official Netlify TanStack Start adapter, with scheduled/background functions |
+
+The Netlify build does **not** include Nitro's worker startup plugin, bundled
+worker entry, or startup migrations. `netlify.toml` configures the build command,
+`dist/client` publish directory, Node 24, and a five-minute ingestion schedule.
+Netlify builds also select the adapter automatically through `NETLIFY=true`.
+
+#### 1. Keep local PostgreSQL; create Neon for production
+
+Local development remains unchanged:
+
+```bash
+# Copy .env.example to .env.local only if you do not already have local settings.
+pnpm db:setup
+pnpm dev
+```
+
+The existing `pgvector/pgvector:pg18` Docker service is an offline development
+database, not a Neon dependency. The ordinary `pg` driver works with both Docker
+Postgres and Neon, including transactions and pgvector; no Neon-specific driver
+or emulator is required. Prefer matching PostgreSQL major versions locally and
+in Neon when available.
+
+[Neon Local](https://neon.com/docs/local/neon-local) is an optional Docker proxy
+to **cloud** Neon branches (including ephemeral branches), not an offline Neon
+emulator. It needs a Neon project, API key, and network access. It is unnecessary
+for the current standard-Postgres integration.
+
+Create a Neon database and copy both connection strings from its Connect dialog:
+
+- **Pooled** (`-pooler` hostname): `DATABASE_URL` for web and background functions.
+- **Direct** (no `-pooler`): `DIRECT_DATABASE_URL` for migrations and administration.
+
+Preserve Neon's supplied TLS connection parameters. Do not disable certificate
+verification. The app reuses a small `pg.Pool` (two connections per process by
+default), with connection, idle, and query timeouts. `DATABASE_POOL_MAX` can be
+set from 1 to 20; keep it small for serverless deployments. Neon's shared pooler
+handles connections across instances.
+
+#### 2. Apply migrations explicitly, before deploying
+
+Run migrations from a trusted machine or CI with the **direct** Neon URL:
+
+```bash
+DIRECT_DATABASE_URL='postgresql://.../neondb?sslmode=require' pnpm db:migrate
+```
+
+The CLI prefers `DIRECT_DATABASE_URL`, falling back to `DATABASE_URL` locally.
+Process environment values take precedence over `.env.local`. All existing
+migrations apply to a new database, including `CREATE EXTENSION vector` and
+`0007_serverless_ingestion_lease`. The migration role must be able to create the
+extension and application tables. Migrations are deliberately **not** run during
+Netlify builds, preview builds, cold starts, or requests. Apply future compatible
+migrations once in a controlled release step before deploying dependent code.
+
+This initializes a schema; it does **not** copy your current Docker data. If you
+want to preserve it, perform a separate tested `pg_dump` / restore into Neon using
+direct connections. Stop ingestion and writes during the final cutover, check
+PostgreSQL version compatibility, and retain a backup. Keep `BETTER_AUTH_SECRET`
+unchanged to preserve existing encrypted Pocket Casts tokens.
+
+#### 3. Configure Netlify environment variables
+
+Set these in the Netlify UI/CLI, not in committed files. Include the **Functions**
+scope where scope controls are available:
+
+| Variable                | Production value                                                          |
+| ----------------------- | ------------------------------------------------------------------------- |
+| `DATABASE_URL`          | Neon pooled connection string, including TLS parameters                   |
+| `BETTER_AUTH_URL`       | Canonical public HTTPS URL, matching your Netlify site/custom domain      |
+| `BETTER_AUTH_SECRET`    | Stable random secret of at least 32 characters                            |
+| `INGESTION_SECRET`      | Separate random secret of at least 32 characters (`openssl rand -hex 32`) |
+| `CLOUDFLARE_ACCOUNT_ID` | Workers AI account ID (optional for RSS-only ingestion)                   |
+| `CLOUDFLARE_API_TOKEN`  | Workers AI API token (optional for RSS-only ingestion)                    |
+
+`DIRECT_DATABASE_URL` is only needed by the external migration step, not deployed
+functions. Netlify supplies `URL` automatically for the scheduled dispatcher's
+destination. Keep it aligned with `BETTER_AUTH_URL`. Secret changes require a new
+deploy. Never expose credentials through `VITE_*` variables.
+
+**Isolate previews:** give preview/branch deploys a separate Neon branch/database,
+their own auth URL, and separate secrets, or leave their database unconfigured.
+Background ingestion refuses non-production and unpublished deploys, but normal
+web requests in previews can still write to whatever database you configure.
+Do not give previews the production database URL.
+
+Connect the repository to Netlify and let it use `netlify.toml`. For a local
+deployment build check:
+
+```bash
+pnpm build:netlify
+```
+
+#### Serverless ingestion behavior
+
+Every five minutes, `podcast-dispatch` invokes `podcast-ingest-background` with a
+server-only bearer secret. The dispatcher only waits for Netlify's `202 Accepted`;
+the actual work runs in a background function, not inside the 30-second scheduled
+function. Check background logs and database sync status for completion: the
+initial 202 does not prove processing succeeded.
+
+- A database lease admits one serverless run at a time, including retries and
+  overlapping deploys. The lease uses ordinary SQL and works with Neon's
+  transaction pooler; it does not depend on a persistent session/advisory lock.
+- Each run attempts at most **five feeds** and **20 embedding batches** (16 inputs
+  per batch by default). It stops starting work after an **eight-minute** budget,
+  propagates cancellation to ingestion, and leaves ample time below Netlify's
+  15-minute hard limit. The normal local worker concurrency settings do not apply.
+- The durable feed/embedding outbox remains the source of truth. Work left by a
+  bounded run is picked up on the next scheduled run. Failed work retains its
+  existing retry date/error; a provider failure stops further batches in that run.
+- Successful runs release the lease. A terminated run recovers after the
+  **20-minute** lease expires. As with the Node worker, delivery is at least once:
+  an API call interrupted before its result is committed can be repeated.
+- Completed embeddings are skipped. Without Cloudflare credentials, RSS imports
+  continue and embeddings remain pending. The serverless path does not start
+  pg-boss or create a `pgboss` schema.
+- Do not run the Node worker and serverless ingestion against the same database
+  at the same time; the Node queue worker does not participate in this lease.
+
+To exercise the same bounded runner against local Docker Postgres, disable the
+automatic worker and run ingestion explicitly in a second terminal:
+
+```bash
+PODCAST_WORKER_ENABLED=false pnpm dev
+# In a second terminal (uses .env.local):
+pnpm ingest:once
+```
+
+`pnpm dev:netlify` optionally uses the official adapter's local platform emulation
+instead of Nitro. Scheduled jobs do not tick automatically in local dev, and the
+deployed function entry points require a published production context; use
+`pnpm ingest:once` for local ingestion testing.
+
+Netlify compute, requests, deploys, and bandwidth share its monthly credit
+allowance; Cloudflare inference and Neon usage have separate quotas. A large
+initial import can exceed free allowances even with bounded batches. Increase the
+cron interval in `netlify.toml` if you prefer lower polling cost to import latency.
+
 ### Incremental behavior and load limits
 
 - Shared public feed records prevent duplicate imports across users. User

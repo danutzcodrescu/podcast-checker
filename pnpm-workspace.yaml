@@ -3,6 +3,7 @@ allowBuilds:
   esbuild: true
   lightningcss: true
   protobufjs: false
+  sharp: false
 minimumReleaseAgeExclude:
   - '@tanstack/ai-client@0.36.2'
   - '@tanstack/ai@0.64.1'

@@ -9,6 +9,9 @@ import viteReact, { reactCompilerPreset } from '@vitejs/plugin-react'
 import babel from '@rolldown/plugin-babel'
 import tailwindcss from '@tailwindcss/vite'
 import { nitro } from 'nitro/vite'
+import netlify from '@netlify/vite-plugin-tanstack-start'
+
+const netlifyTarget = process.env.DEPLOY_TARGET === 'netlify' || process.env.NETLIFY === 'true'
 
 const config = defineConfig({
   resolve: { tsconfigPaths: true },
@@ -19,25 +22,27 @@ const config = defineConfig({
       outdir: './src/paraglide',
       strategy: ['url', 'baseLocale'],
     }),
-    nitro({
-      preset: 'node-server',
-      plugins: ['./src/plugins/podcast-worker.ts'],
-      rollupConfig: { external: [/^@sentry\//] },
-      hooks: {
-        'rollup:before'(instance, bundle) {
-          if (instance.options.dev) return
-          // Additional Node entries share Nitro's dependency tracing and output.
-          bundle.input = {
-            index: instance.options.entry,
-            'podcast-worker': resolve('scripts/podcast-worker.ts'),
-            migrate: resolve('scripts/migrate.ts'),
-          }
-          bundle.output = { ...bundle.output, entryFileNames: '[name].mjs' }
+    !netlifyTarget &&
+      nitro({
+        preset: 'node-server',
+        plugins: ['./src/plugins/podcast-worker.ts'],
+        rollupConfig: { external: [/^@sentry\//] },
+        hooks: {
+          'rollup:before'(instance, bundle) {
+            if (instance.options.dev) return
+            // Additional Node entries share Nitro's dependency tracing and output.
+            bundle.input = {
+              index: instance.options.entry,
+              'podcast-worker': resolve('scripts/podcast-worker.ts'),
+              migrate: resolve('scripts/migrate.ts'),
+            }
+            bundle.output = { ...bundle.output, entryFileNames: '[name].mjs' }
+          },
         },
-      },
-    }),
+      }),
     tailwindcss(),
     tanstackStart(),
+    netlifyTarget && netlify(),
     viteReact(),
     babel({ presets: [reactCompilerPreset()] }),
   ],
