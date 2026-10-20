@@ -10,6 +10,16 @@ const wrap = (items: string) =>
 const item = `<item><title>713. King Arthur &amp; Britain</title><itunes:title>King Arthur &amp; Britain</itunes:title><description>Arthur's story.</description><content:encoded><![CDATA[<p>Arthur's story.</p><p>Join The Rest Is History Club: subscribe now.</p><p>This episode is sponsored by Acme.</p><p>Twitter:<br>@host</p><p>Producers: Example</p>]]></content:encoded><guid isPermaLink="false">episode-1</guid><itunes:duration>1:02:03</itunes:duration><itunes:episode>713</itunes:episode><itunes:explicit>yes</itunes:explicit><enclosure url="https://example.com/audio.mp3"/><pubDate>Sun, 11 Oct 2026 23:05:00 GMT</pubDate></item>`
 
 describe('RSS normalization', () => {
+  it('combines RSS categories and nested iTunes categories without duplicates', () => {
+    const feed = parseRss(
+      wrap(
+        `<itunes:category text="Technology"><itunes:category text="Web Development"/></itunes:category><category>Technology</category><category domain="example.com">Education</category>${item}`,
+      ),
+    )
+    expect(feed.metadata.categories).toEqual(['Technology', 'Web Development', 'Education'])
+    expect(parseRss(wrap(item)).metadata.categories).toEqual([])
+  })
+
   it('extracts namespaced metadata and embeds useful text without duplicated descriptions or promotions', () => {
     const feed = parseRss(wrap(item))
     expect(feed).toMatchObject({

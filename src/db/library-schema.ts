@@ -23,6 +23,7 @@ export const followedPodcast = pgTable(
     podcast: jsonb('podcast').$type<Podcast>().notNull(),
     feedId: uuid('feed_id').references(() => podcastFeed.id),
     categories: text('categories').array().notNull().default([]),
+    categorisationToken: uuid('categorisation_token'),
     followedAt: timestamp('followed_at').defaultNow().notNull(),
   },
   (table) => [

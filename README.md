@@ -9,6 +9,31 @@ pnpm install
 pnpm dev
 ```
 
+## Automatic podcast categories
+
+Set `OPENROUTER_API_KEY` on the server and run `pnpm db:migrate`. New follows
+without a selected category are classified from their RSS channel title and
+description, with publisher, RSS/iTunes categories (including subcategories), and
+language as supporting context, using Jev directly through OpenRouter. The follow is saved first;
+classification is attempted within a 20-second budget before returning the library.
+Failures or uncertain matches leave the podcast uncategorised. Podcasts without
+an RSS URL are left uncategorised. Existing follows and explicit category edits
+do not trigger classification.
+
+The default model is `~typesafe/jev-latest`: Jev itself classifies the podcast in
+one request to OpenRouter's `POST /api/alpha/decisions`, using one Choice question
+with the four categories and an explicit `none` option. `none` leaves the podcast
+uncategorised. This bypasses TanStack AI's chat adapter because Jev's Decisions
+API is not Chat Completions. `PODCAST_CLASSIFICATION_MODEL` can override the model
+with a Decisions-compatible ID (for example, a pinned Jev version), not a chat
+model or `typesafe/jev-router`. The existing OpenRouter API key still applies.
+
+Edit `src/lib/podcast-classifiers.ts` to maintain the four classifiers (`sport`,
+`story`, `history`, `web`), descriptions and example shows. The output schema is
+derived from that configuration. When adding a classifier, also provision its
+category for users; only an existing category belonging to the follower is assigned.
+Manual category changes always take precedence over an in-flight classification.
+
 ## Agent skills
 
 `@tanstack/intent` is installed as a development dependency. Run `pnpm intent list`

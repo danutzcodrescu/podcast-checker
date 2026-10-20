@@ -1,4 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
+import { randomUUID } from 'node:crypto'
 import { and, asc, desc, eq, ne, sql } from 'drizzle-orm'
 
 import { db } from '#/db'
@@ -100,7 +101,11 @@ export const saveFollowedPodcast = createServerFn({ method: 'POST' })
     const categories = [
       ...new Map(data.categories.map((name) => [categoryId(name), name])).entries(),
     ]
-    await db.transaction(async (tx) => {
+    const token =
+      !categories.length && data.podcast.feedUrl && process.env.OPENROUTER_API_KEY
+        ? randomUUID()
+        : null
+    const saved = await db.transaction(async (tx) => {
       let feedId: string | null = null
       if (data.podcast.feedUrl) {
         const url = new URL(data.podcast.feedUrl)
@@ -124,15 +129,27 @@ export const saveFollowedPodcast = createServerFn({ method: 'POST' })
         podcast: data.podcast,
         feedId,
         categories: categories.map(([id]) => id),
+        categorisationToken: token,
       }
-      await tx
+      const [row] = await tx
         .insert(followedPodcast)
         .values(values)
         .onConflictDoUpdate({
           target: [followedPodcast.userId, followedPodcast.podcastId],
-          set: { podcast: values.podcast, categories: values.categories, feedId },
+          set: {
+            podcast: values.podcast,
+            categories: values.categories,
+            feedId,
+            categorisationToken: null,
+          },
         })
+        .returning({ token: followedPodcast.categorisationToken })
+      return row
     })
+    if (saved.token && data.podcast.feedUrl) {
+      const { categoriseFollow } = await import('./podcast-categorisation')
+      await categoriseFollow(userId, data.podcast.id, saved.token, data.podcast.feedUrl)
+    }
     return readLibrary(userId)
   })
 

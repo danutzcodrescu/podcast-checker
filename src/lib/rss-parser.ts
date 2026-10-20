@@ -10,6 +10,14 @@ const text = (value: any): string =>
   value == null ? '' : typeof value === 'object' ? text(value['#text']) : String(value)
 const nullable = (value: any) => text(value).trim() || null
 
+function itunesCategories(value: any): string[] {
+  return array(value)
+    .flatMap((category) =>
+      [text(category['@_text']).trim()].concat(itunesCategories(category['itunes:category'])),
+    )
+    .filter(Boolean)
+}
+
 function duration(value: any) {
   const raw = text(value).trim()
   if (!/^\d+(?::\d{1,2}){0,2}$/.test(raw)) return null
@@ -112,9 +120,14 @@ export function parseRss(xml: string) {
     language: nullable(channel.language),
     publisher: nullable(channel['itunes:author']),
     metadata: {
-      categories: array(channel['itunes:category'])
-        .map((value) => value['@_text'])
-        .filter(Boolean),
+      categories: [
+        ...new Set([
+          ...itunesCategories(channel['itunes:category']),
+          ...array(channel.category)
+            .map((category) => text(category).trim())
+            .filter(Boolean),
+        ]),
+      ],
       link: nullable(channel.link),
     },
     nextUrl: nullable(

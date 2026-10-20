@@ -1,0 +1,1 @@
+ALTER TABLE "followed_podcast" ADD COLUMN "categorisation_token" uuid;
