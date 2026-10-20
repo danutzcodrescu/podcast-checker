@@ -62,6 +62,23 @@ emulation, including checks for logo rendering and delivery of browser icons.
 ## Authentication pages
 
 - `/signin` provides email/password authentication; `/signup` also requires password confirmation.
+- Sign-up is disabled by default. Apply `drizzle/0008_feature_flags.sql` with
+  `pnpm db:migrate`. The PostgreSQL `feature_flag` table contains a
+  `signup_enabled` row initialized to `false` (new flags also default to `false`).
+  Enable registration with:
+
+  ```sql
+  UPDATE feature_flag SET enabled = true WHERE key = 'signup_enabled';
+  ```
+
+  Set it back to `false` to disable registration. No restart is required: the flag
+  is read on auth-page navigation and every sign-up request. When disabled (or the
+  row is missing), the sign-in page hides its registration link, `/signup`
+  returns the standard HTTP 404 page, and the sign-up API returns a generic HTTP
+  404 without disclosing the flag. Existing accounts
+  can still sign in. Enable the flag on a dedicated test database before running
+  the Playwright suite, which exercises registration and creates test accounts.
+
 - `/discover` and `/latest-episodes` are authenticated pages; anonymous visitors go to `/signin`.
 - Successful sign-in or sign-up navigates through `/`, which redirects to
   `/latest-episodes` when the account follows any podcasts, and `/discover` otherwise.

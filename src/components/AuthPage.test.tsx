@@ -4,6 +4,7 @@ import type { ComponentPropsWithoutRef } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthPage } from '#/components/AuthPage'
+import { m } from '#/paraglide/messages'
 import { overwriteGetLocale } from '#/paraglide/runtime'
 
 const mocks = vi.hoisted(() => ({
@@ -41,6 +42,54 @@ async function fillCredentials(user: ReturnType<typeof userEvent.setup>, confirm
 }
 
 describe('authentication forms', () => {
+  it('hides the sign-up link by default while keeping sign-in available', () => {
+    render(<AuthPage mode="sign-in" />)
+
+    expect(screen.queryByRole('link', { name: 'Create an account' })).not.toBeInTheDocument()
+    expect(screen.queryByText('New here?')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeEnabled()
+  })
+
+  it('shows the sign-up link when registration is enabled', () => {
+    render(<AuthPage mode="sign-in" signupEnabled />)
+
+    expect(screen.getByRole('link', { name: 'Create an account' })).toHaveAttribute(
+      'href',
+      '/signup',
+    )
+  })
+
+  it('keeps a link back to sign-in on the sign-up page', () => {
+    render(<AuthPage mode="sign-up" />)
+
+    expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/signin')
+  })
+
+  it.each([
+    ['en', 'Create account'],
+    ['fr', 'Créer un compte'],
+  ] as const)(
+    'handles registration being disabled after loading the form (%s)',
+    async (locale, submit) => {
+      overwriteGetLocale(() => locale)
+      mocks.signUp.mockResolvedValueOnce({ error: { status: 404, code: 'NOT_FOUND' } })
+      const user = userEvent.setup()
+      render(<AuthPage mode="sign-up" />)
+      await user.type(screen.getByRole('textbox'), 'listener@example.com')
+      await user.type(
+        screen.getByLabelText(m.auth_password_label(), { exact: true }),
+        'password123',
+      )
+      await user.type(screen.getByLabelText(m.auth_confirm_password_label()), 'password123')
+      await user.click(screen.getByRole('button', { name: submit }))
+
+      await waitFor(() =>
+        expect(mocks.navigate).toHaveBeenCalledWith({ to: '/signup', reloadDocument: true }),
+      )
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    },
+  )
+
   it('signs up without a full name and navigates home after password confirmation', async () => {
     const user = userEvent.setup()
     render(<AuthPage mode="sign-up" />)

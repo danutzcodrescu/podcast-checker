@@ -57,6 +57,13 @@
       "when": 1792484742387,
       "tag": "0007_serverless_ingestion_lease",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792486396370,
+      "tag": "0008_feature_flags",
+      "breakpoints": true
     }
   ]
 }

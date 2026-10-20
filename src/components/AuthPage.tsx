@@ -14,6 +14,7 @@ import { authClient } from '#/lib/auth-client'
 import { m } from '#/paraglide/messages'
 
 type AuthMode = 'sign-in' | 'sign-up'
+type AuthPageProps = { mode: AuthMode; signupEnabled?: boolean }
 type FormState = {
   rememberMe: boolean
   pending: boolean
@@ -45,7 +46,7 @@ function authErrorMessage(code?: string) {
   }
 }
 
-export function AuthPage({ mode }: { mode: AuthMode }) {
+export function AuthPage({ mode, signupEnabled = false }: AuthPageProps) {
   return (
     <PageShell>
       <AppHeader />
@@ -56,7 +57,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
             className="rounded-2xl border border-border bg-surface px-12 pt-16 pb-12 shadow-xs laptop:px-8 laptop:pt-10 laptop:pb-8 tablet:p-9 mobile:px-6 mobile:py-8"
             aria-labelledby="auth-heading"
           >
-            <AuthForm key={mode} mode={mode} />
+            <AuthForm key={mode} mode={mode} signupEnabled={signupEnabled} />
           </section>
           <ParaglideLocaleSwitcher />
         </div>
@@ -65,7 +66,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   )
 }
 
-function AuthForm({ mode }: { mode: AuthMode }) {
+function AuthForm({ mode, signupEnabled }: AuthPageProps) {
   const isSignUp = mode === 'sign-up'
   const hydrated = useHydrated()
   const navigate = useNavigate()
@@ -96,6 +97,11 @@ function AuthForm({ mode }: { mode: AuthMode }) {
         : await authClient.signIn.email({ email, password, rememberMe })
 
       if (result.error) {
+        if (isSignUp && result.error.status === 404) {
+          // Recheck the route on the server so an already-open form also gets the 404 page.
+          await navigate({ to: '/signup', reloadDocument: true })
+          return
+        }
         updateState({ error: authErrorMessage(result.error.code), pending: false })
         return
       }
@@ -231,15 +237,17 @@ function AuthForm({ mode }: { mode: AuthMode }) {
         </Button>
       </form>
 
-      <div className="mt-9 flex flex-wrap justify-center gap-2 border-t border-border pt-9 text-sm text-foreground mobile:mt-7 mobile:pt-6">
-        <span>{isSignUp ? m.auth_existing_account() : m.auth_new_here()}</span>
-        <Link
-          className="underline underline-offset-4 hover:text-link"
-          to={isSignUp ? '/signin' : '/signup'}
-        >
-          {isSignUp ? m.auth_sign_in() : m.auth_create_account_heading()}
-        </Link>
-      </div>
+      {(isSignUp || signupEnabled) && (
+        <div className="mt-9 flex flex-wrap justify-center gap-2 border-t border-border pt-9 text-sm text-foreground mobile:mt-7 mobile:pt-6">
+          <span>{isSignUp ? m.auth_existing_account() : m.auth_new_here()}</span>
+          <Link
+            className="underline underline-offset-4 hover:text-link"
+            to={isSignUp ? '/signin' : '/signup'}
+          >
+            {isSignUp ? m.auth_sign_in() : m.auth_create_account_heading()}
+          </Link>
+        </div>
+      )}
     </>
   )
 }
