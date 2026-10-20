@@ -1,4 +1,5 @@
 import { Worker } from 'node:worker_threads'
+import { getLogger } from './logger'
 
 type WorkerOptions = {
   entry: string
@@ -36,7 +37,10 @@ export function startPodcastWorker({
       : new Worker(entry, { execArgv: [] })
     const current = worker
     readyTimer = setTimeout(() => {
-      console.error('Podcast worker did not become ready; restarting it')
+      getLogger().error(
+        { event: 'worker.startup_timeout', readyTimeoutMs },
+        'Podcast worker did not become ready; restarting it',
+      )
       void current.terminate()
     }, readyTimeoutMs)
     current.on('message', (message) => {
@@ -47,14 +51,19 @@ export function startPodcastWorker({
         failures = 0
       }, 60_000)
     })
-    current.on('error', (error) => console.error('Podcast worker thread failed:', error.message))
+    current.on('error', (err) =>
+      getLogger().error({ event: 'worker.failed', err }, 'Podcast worker thread failed'),
+    )
     current.once('exit', (code) => {
       clearTimeout(readyTimer)
       clearTimeout(stableTimer)
       worker = undefined
       if (stopping) return
       const delay = Math.min(restartDelayMs * 2 ** Math.min(failures++, 6), 60_000)
-      console.error(`Podcast worker exited (${code}); restarting in ${delay}ms`)
+      getLogger().error(
+        { event: 'worker.restarting', exitCode: code, restartDelayMs: delay },
+        'Podcast worker exited; restarting',
+      )
       restartTimer = setTimeout(spawn, delay)
     })
   }
@@ -71,7 +80,10 @@ export function startPodcastWorker({
       closing = current
         ? new Promise<void>((resolve) => {
             const timeout = setTimeout(() => {
-              console.warn('Podcast worker shutdown timed out; terminating thread')
+              getLogger().warn(
+                { event: 'worker.shutdown_timeout', shutdownTimeoutMs },
+                'Podcast worker shutdown timed out; terminating thread',
+              )
               void current.terminate()
             }, shutdownTimeoutMs)
             current.once('exit', () => {

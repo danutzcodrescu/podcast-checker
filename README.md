@@ -9,6 +9,13 @@ pnpm install
 pnpm dev
 ```
 
+## Agent skills
+
+`@tanstack/intent` is installed as a development dependency. Run `pnpm intent list`
+to discover local skills and `pnpm intent load <package>#<skill>` to load one.
+The package script selects the installed CLI explicitly because older TanStack
+Devtools packages also expose an incompatible binary named `intent`.
+
 ## Git hooks
 
 `pnpm install` installs the Husky pre-commit hook automatically. If dependencies
@@ -21,6 +28,45 @@ unstaged edits are preserved, and remaining lint errors block the commit.
 
 Run `pnpm lint:staged` to run the same checks manually on staged files.
 `pnpm check` checks linting and formatting across the project.
+
+## Server logging
+
+The web server, Netlify functions, and ingestion worker use **Pino** to write
+newline-delimited JSON to stdout. Netlify captures function logs automatically;
+Docker logs are available with `docker compose logs -f app`. No external logging
+service or worker-thread transport is required; writes are synchronous so logs
+are not left buffered when a serverless invocation finishes.
+
+Set `LOG_LEVEL` in the server environment (or `.env.local`) to `trace`, `debug`,
+`info` (default), `warn`, `error`, `fatal`, or `silent`. On Netlify, include the
+Functions scope and redeploy. Request completion timing measures time to response
+headers, not consumption of a streaming response body.
+
+- HTTP logs include `requestId`, `correlationId`, `method`, `pathname`, `status`,
+  and `durationMs`. Responses expose `x-request-id` for support/debugging.
+- Netlify ingestion logs also include `functionName`, `invocationId`, and
+  `deployContext`. Dispatch forwards `x-correlation-id` to background ingestion:
+  search both functions' logs for that value to follow one run.
+- Server-function logs include `serverFunction`, `serverFunctionId`, and the
+  same request context, including calls made during SSR. Redirects/not-found
+  results are informational, validation failures are warnings, and other thrown
+  errors are errors. RPC logging is independent of HTTP response status.
+- Ingestion logs include feed/job IDs, batch sizes, skipped runs, and failures.
+  Set `LOG_LEVEL=debug` to also see request-start events.
+
+Use `getLogger()` from `src/lib/logger.ts` inside server-only code to inherit
+the current async context, and `withLogContext({ feedId }, action)` to add fields:
+
+```ts
+getLogger().error({ event: 'ingestion.feed_failed', err, feedId }, 'Feed sync failed')
+```
+
+Never log raw requests, function arguments, credentials, search text, or upstream
+response bodies. HTTP logging records only the pathname, not query strings or
+headers. Common credential/payload fields are redacted as a safety net; error
+serialization excludes arbitrary properties and SQL/validation input messages.
+Keep custom error messages free of sensitive values as well. Pino is server-only
+and is not included in the browser bundle.
 
 `pnpm lint` also runs a type-aware deprecated-API check against the installed
 dependency declarations, including editor-only `@deprecated` annotations. Run

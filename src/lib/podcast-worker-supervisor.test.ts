@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { startPodcastWorker } from './podcast-worker-supervisor'
+import { logger } from './logger'
 
 const mocks = vi.hoisted(() => ({ workers: [] as any[] }))
 vi.mock('node:worker_threads', () => ({
@@ -25,8 +26,8 @@ vi.mock('node:worker_threads', () => ({
 beforeEach(() => {
   vi.useFakeTimers()
   mocks.workers.length = 0
-  vi.spyOn(console, 'error').mockImplementation(() => {})
-  vi.spyOn(console, 'warn').mockImplementation(() => {})
+  vi.spyOn(logger, 'error').mockImplementation(() => {})
+  vi.spyOn(logger, 'warn').mockImplementation(() => {})
 })
 afterEach(() => {
   vi.clearAllTimers()
@@ -39,6 +40,10 @@ describe('app-managed podcast worker', () => {
     const supervisor = startPodcastWorker({ entry: '/app/worker.mjs' })
     mocks.workers[0].emit('message', 'ready')
     mocks.workers[0].emit('error', new Error('worker crashed'))
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'worker.failed', err: expect.any(Error) }),
+      'Podcast worker thread failed',
+    )
     mocks.workers[0].emit('exit', 1)
     await vi.advanceTimersByTimeAsync(1000)
     expect(mocks.workers).toHaveLength(2)

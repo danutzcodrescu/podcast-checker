@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { runPodcastIngestion } from './podcast-ingestion-runner'
+import { logger } from './logger'
 
 const mocks = vi.hoisted(() => ({
   acquire: vi.fn(),
@@ -24,6 +25,9 @@ vi.mock('./podcast-ingestion', () => ({
 
 beforeEach(() => {
   vi.resetAllMocks()
+  vi.spyOn(logger, 'info').mockImplementation(() => {})
+  vi.spyOn(logger, 'warn').mockImplementation(() => {})
+  vi.spyOn(logger, 'error').mockImplementation(() => {})
   vi.stubEnv('PODCAST_REFRESH_MINUTES', '60')
   vi.stubEnv('PODCAST_EMBEDDING_BATCH_SIZE', '16')
   mocks.acquire.mockResolvedValue('lease-token')
@@ -79,6 +83,22 @@ describe('bounded serverless ingestion', () => {
     mocks.sync.mockRejectedValueOnce(new Error('RSS failed'))
     mocks.embed.mockRejectedValueOnce(new Error('Quota exhausted'))
     expect(await runPodcastIngestion()).toMatchObject({ feeds: 1, failures: 2 })
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'ingestion.feed_failed',
+        feedId: 'one',
+        err: expect.any(Error),
+      }),
+      'Podcast feed ingestion failed',
+    )
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'ingestion.embeddings_failed',
+        batchSize: 16,
+        err: expect.any(Error),
+      }),
+      'Episode embedding batch failed',
+    )
     expect(mocks.embed).toHaveBeenCalledOnce()
     expect(mocks.release).toHaveBeenCalledWith('lease-token')
   })

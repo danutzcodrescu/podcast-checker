@@ -19,6 +19,14 @@ async function result<T>(action: () => Promise<T>): Promise<PocketCastsResult<T>
   try {
     return { ok: true, data: await action() }
   } catch (cause) {
+    const { getLogger } = await import('./logger')
+    getLogger().warn(
+      {
+        event: 'pocket_casts.failed',
+        errorCode: cause instanceof PocketCastsError ? cause.code : 'unavailable',
+      },
+      'Pocket Casts operation failed',
+    )
     // Never serialize upstream response bodies, credentials, or database errors.
     return { ok: false, error: cause instanceof PocketCastsError ? cause.code : 'unavailable' }
   }

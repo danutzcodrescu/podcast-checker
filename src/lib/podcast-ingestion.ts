@@ -8,6 +8,7 @@ import { embedEpisodes } from './episode-embeddings'
 import { embeddingModel, preprocessingVersion } from './episode-text'
 import { fetchRss } from './rss-fetch'
 import { parseRss } from './rss-parser'
+import { getLogger } from './logger'
 
 export type EmbeddingJob = { episodeId: string; contentHash: string }
 export const hasFollowers = (feedId: typeof podcastFeed.id | typeof podcastEpisode.feedId) =>
@@ -124,7 +125,10 @@ export async function syncPodcastFeed(
       while (true) {
         await saveFeedEpisodes(feedId, page.episodes, signal)
         if (page.skipped)
-          console.warn(`RSS feed ${feedId}: skipped ${page.skipped} unidentifiable items`)
+          getLogger().warn(
+            { event: 'ingestion.items_skipped', feedId, skipped: page.skipped },
+            'Skipped unidentifiable RSS items',
+          )
         if (!page.nextUrl) break
         const nextUrl = new URL(page.nextUrl, baseUrl).href
         if (visited.has(nextUrl) || pages >= 20)

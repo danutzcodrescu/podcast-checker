@@ -5,6 +5,7 @@ import { config } from 'dotenv'
 import { Pool } from 'pg'
 
 import * as schema from './auth-schema.ts'
+import { getLogger } from '../lib/logger'
 
 config({ path: ['.env.local', '.env'], quiet: true })
 
@@ -28,6 +29,11 @@ const pool = new Pool({
   statement_timeout: 30_000,
   allowExitOnIdle: true,
 })
-pool.on('error', () => console.error('Idle database connection failed'))
+pool.on('error', (err) =>
+  getLogger().error(
+    { event: 'database.connection_failed', err },
+    'Idle database connection failed',
+  ),
+)
 
 export const db = drizzle(pool, { schema })

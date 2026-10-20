@@ -7,6 +7,7 @@ import { followedPodcast } from '#/db/library-schema'
 import { embedEpisodeQuery } from '#/lib/episode-query-embedding'
 import { embeddingModel, preprocessingVersion } from '#/lib/episode-text'
 import { podcastIdInput } from '#/lib/podcast-library-input'
+import { getLogger } from '#/lib/logger'
 
 export const episodesInput = z.object({
   podcastId: podcastIdInput.nullable(),
@@ -29,7 +30,13 @@ export async function readLatestEpisodes(userId: string, data: z.infer<typeof ep
   if (searching && data.searchMode !== 'text') {
     try {
       vector = await embedEpisodeQuery(data.term)
-    } catch {
+    } catch (err) {
+      getLogger().warn(
+        { event: 'search.semantic_unavailable', err, searchMode: data.searchMode },
+        'Semantic episode search unavailable',
+      )
+      // Do not expose provider errors (or their causes) to the RPC client.
+      // oxlint-disable-next-line preserve-caught-error -- The safe failure was logged above.
       if (data.searchMode === 'semantic') throw new Error('Semantic episode search is unavailable')
       semanticUnavailable = true
     }

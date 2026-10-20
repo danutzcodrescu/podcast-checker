@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
+import { getLogger } from './logger'
 
 function ingestionSecret() {
   const secret = process.env.INGESTION_SECRET
@@ -22,7 +23,12 @@ export async function dispatchNetlifyIngestion() {
   if (destination.protocol !== 'https:') throw new Error('Netlify URL must use HTTPS')
   const response = await fetch(destination, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${ingestionSecret()}` },
+    headers: {
+      Authorization: `Bearer ${ingestionSecret()}`,
+      ...(getLogger().bindings().correlationId
+        ? { 'x-correlation-id': getLogger().bindings().correlationId }
+        : {}),
+    },
     redirect: 'error',
     signal: AbortSignal.timeout(10_000),
   })
