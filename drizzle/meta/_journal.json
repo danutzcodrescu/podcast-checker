@@ -43,6 +43,13 @@
       "when": 1791990465354,
       "tag": "0005_pocket_casts_connection",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792483806217,
+      "tag": "0006_default_podcast_categories",
+      "breakpoints": true
     }
   ]
 }

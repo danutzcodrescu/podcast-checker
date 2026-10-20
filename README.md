@@ -554,6 +554,13 @@ key and `ON CONFLICT` handling. Run `pnpm db:migrate` to merge duplicate categor
 identities without changing podcast assignments and rebuild application indexes.
 The repair is transactional and locks tables while rebuilding their indexes.
 
+Migration `0006_default_podcast_categories` gives every account the default
+categories `sport`, `story`, `history`, and `web`. Each default uses its
+normalized name as a fixed ID, so the account/category primary key makes the
+seed idempotent; a `NOT EXISTS` check also skips equivalent names that differ
+only in case or surrounding whitespace. A trigger seeds the same defaults for
+users created afterwards.
+
 After changing the schema, generate and apply a new migration:
 
 ```bash
