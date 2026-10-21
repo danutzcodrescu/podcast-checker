@@ -14,6 +14,9 @@ export async function scoreEpisodeDocuments(
   signal.throwIfAborted()
   const result = await rerank({
     adapter: createOpenRouterRerank(model, apiKey, {
+      // SDK logging is independent of TanStack's debug flag and can expose payloads and credentials.
+      // Override its OPENROUTER_DEBUG console fallback explicitly.
+      debugLogger: { group() {}, groupEnd() {}, log() {} },
       // Reuse the adapter's SDK retry/backoff and typed provider errors, not a second retry loop.
       retryConfig: {
         strategy: 'backoff',
@@ -25,7 +28,7 @@ export async function scoreEpisodeDocuments(
     documents,
     topN: documents.length,
     abortSignal: signal,
-    // SDK error messages may contain upstream bodies. Only our sanitized status logs are enabled.
+    // TanStack error messages may also contain upstream bodies. Keep both logging layers silent.
     debug: false,
   })
   signal.throwIfAborted()

@@ -1,22 +1,18 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { PostgreSqlContainer } from '@testcontainers/postgresql'
-import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql'
 import { and, eq, inArray } from 'drizzle-orm'
-import { migrate } from 'drizzle-orm/node-postgres/migrator'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { user } from '#/db/auth-schema'
 import { podcastEpisode, podcastFeed } from '#/db/ingestion-schema'
 import { podcastCategory } from '#/db/library-schema'
+import { createTestDatabase } from '#/test/database'
 
 const mocks = vi.hoisted(() => ({ fetch: vi.fn(), classify: vi.fn() }))
 vi.mock('./rss-fetch', () => ({ fetchRss: mocks.fetch }))
 vi.mock('./podcast-classification', () => ({ classifyPodcast: mocks.classify }))
 
-const testUrl = process.env.PODCAST_TEST_DATABASE_URL
-const useContainer = process.env.PODCAST_TEST_CONTAINERS === 'true'
-let container: StartedPostgreSqlContainer | undefined
+const database = createTestDatabase()
 let db: (typeof import('#/db'))['db']
 let follows: typeof import('./podcast-follows.server')
 let readLibrary: (typeof import('./podcast-library-query.server'))['readPodcastLibrary']
@@ -53,17 +49,11 @@ async function listener() {
 
 // Default tests stay Docker-optional. pnpm test:follows starts its own pgvector
 // database; an explicit test URL remains supported for existing integration jobs.
-describe.runIf(useContainer || !!testUrl)('follow categorisation lifecycle', () => {
+describe.runIf(database.enabled)('follow categorisation lifecycle', () => {
   beforeAll(async () => {
-    if (useContainer) {
-      container = await new PostgreSqlContainer('pgvector/pgvector:pg18').start()
-    }
-    vi.stubEnv('DATABASE_URL', container?.getConnectionUri() ?? testUrl!)
-    vi.stubEnv('LOG_LEVEL', 'silent')
-    db = (await import('#/db')).db
+    db = await database.start()
     follows = await import('./podcast-follows.server')
     readLibrary = (await import('./podcast-library-query.server')).readPodcastLibrary
-    await migrate(db, { migrationsFolder: './drizzle' })
   }, 120_000)
 
   beforeEach(async () => {
@@ -83,23 +73,11 @@ describe.runIf(useContainer || !!testUrl)('follow categorisation lifecycle', () 
   })
 
   afterAll(async () => {
-    try {
-      if (db) {
-        try {
-          if (owners.length) await db.delete(user).where(inArray(user.id, owners))
-          if (feedUrls.length)
-            await db.delete(podcastFeed).where(inArray(podcastFeed.url, feedUrls))
-        } finally {
-          await db.$client.end()
-        }
-      }
-    } finally {
-      try {
-        await container?.stop()
-      } finally {
-        vi.unstubAllEnvs()
-      }
-    }
+    await database.stop(async (cleanupDb) => {
+      if (owners.length) await cleanupDb.delete(user).where(inArray(user.id, owners))
+      if (feedUrls.length)
+        await cleanupDb.delete(podcastFeed).where(inArray(podcastFeed.url, feedUrls))
+    })
   }, 30_000)
 
   it('categorises a newly saved follow before returning the refreshed library', async () => {

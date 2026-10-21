@@ -1,9 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { PostgreSqlContainer } from '@testcontainers/postgresql'
-import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql'
 import { and, eq, inArray } from 'drizzle-orm'
-import { migrate } from 'drizzle-orm/node-postgres/migrator'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { user } from '#/db/auth-schema'
@@ -11,6 +8,7 @@ import { episodeEmbedding, podcastEpisode, podcastFeed } from '#/db/ingestion-sc
 import { followedPodcast } from '#/db/library-schema'
 import { episodeSearchSession } from '#/db/episode-search-schema'
 import { embeddingDimensions, embeddingModel, preprocessingVersion } from '#/lib/episode-text'
+import { createTestDatabase } from '#/test/database'
 
 const mocks = vi.hoisted(() => ({ embed: vi.fn(), score: vi.fn() }))
 vi.mock('#/lib/episode-query-embedding', () => ({ embedEpisodeQuery: mocks.embed }))
@@ -19,9 +17,7 @@ vi.mock('#/lib/episode-reranking-provider', async (importOriginal) => ({
   scoreEpisodeDocuments: mocks.score,
 }))
 
-const testUrl = process.env.PODCAST_TEST_DATABASE_URL
-const useContainer = process.env.PODCAST_TEST_CONTAINERS === 'true'
-let container: StartedPostgreSqlContainer | undefined
+const database = createTestDatabase()
 const userId = randomUUID()
 const otherUserId = randomUUID()
 const feedIds: string[] = []
@@ -105,16 +101,10 @@ async function episode(
   return saved.id
 }
 
-describe.runIf(useContainer || !!testUrl)('database-backed episode search', () => {
+describe.runIf(database.enabled)('database-backed episode search', () => {
   beforeAll(async () => {
-    if (useContainer) {
-      container = await new PostgreSqlContainer('pgvector/pgvector:pg18').start()
-    }
-    vi.stubEnv('DATABASE_URL', container?.getConnectionUri() ?? testUrl!)
-    vi.stubEnv('LOG_LEVEL', 'silent')
-    db = (await import('#/db')).db
+    db = await database.start()
     queries = await import('./episode-query')
-    await migrate(db, { migrationsFolder: './drizzle' })
     await db.insert(user).values(
       [userId, otherUserId].map((id) => ({
         id,
@@ -173,22 +163,11 @@ describe.runIf(useContainer || !!testUrl)('database-backed episode search', () =
     vi.restoreAllMocks()
   })
   afterAll(async () => {
-    try {
-      if (db) {
-        try {
-          await db.delete(user).where(inArray(user.id, [userId, otherUserId]))
-          if (feedIds.length) await db.delete(podcastFeed).where(inArray(podcastFeed.id, feedIds))
-        } finally {
-          await db.$client.end()
-        }
-      }
-    } finally {
-      try {
-        await container?.stop()
-      } finally {
-        vi.unstubAllEnvs()
-      }
-    }
+    await database.stop(async (cleanupDb) => {
+      await cleanupDb.delete(user).where(inArray(user.id, [userId, otherUserId]))
+      if (feedIds.length)
+        await cleanupDb.delete(podcastFeed).where(inArray(podcastFeed.id, feedIds))
+    })
   }, 30_000)
 
   it('searches full titles and descriptions, including unembedded episodes and content beyond previews', async () => {

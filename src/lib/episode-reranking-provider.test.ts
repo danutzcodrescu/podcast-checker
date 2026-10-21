@@ -21,10 +21,16 @@ const valid = {
 }
 
 beforeEach(() => {
+  // The SDK caches its environment on first use, so enable debugging for the whole suite.
+  vi.stubEnv('OPENROUTER_DEBUG', 'true')
   vi.stubGlobal('fetch', fetchMock)
   fetchMock.mockReset().mockImplementation(() => Response.json(valid))
 })
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
+  vi.restoreAllMocks()
+})
 
 describe('TanStack AI OpenRouter NVIDIA reranker', () => {
   it('uses the official adapter and maps returned indices rather than response order', async () => {
@@ -40,6 +46,34 @@ describe('TanStack AI OpenRouter NVIDIA reranker', () => {
       top_n: 2,
     })
   })
+
+  it.each(['success', 'provider error'])(
+    'never logs SDK payloads on %s with OPENROUTER_DEBUG enabled',
+    async (outcome) => {
+      const logs = [
+        vi.spyOn(console, 'log').mockImplementation(() => {}),
+        vi.spyOn(console, 'group').mockImplementation(() => {}),
+        vi.spyOn(console, 'groupEnd').mockImplementation(() => {}),
+        vi.spyOn(console, 'debug').mockImplementation(() => {}),
+        vi.spyOn(console, 'info').mockImplementation(() => {}),
+        vi.spyOn(console, 'warn').mockImplementation(() => {}),
+        vi.spyOn(console, 'error').mockImplementation(() => {}),
+      ]
+      if (outcome === 'provider error') {
+        fetchMock.mockImplementation(() =>
+          Response.json(
+            { error: { message: 'Private upstream response', code: 400 } },
+            { status: 400 },
+          ),
+        )
+        await expect(score()).rejects.toThrow()
+      } else {
+        expect(await score()).toEqual({ scores: [-1, 2.5], cost: 0 })
+      }
+      for (const log of logs) expect(log).not.toHaveBeenCalled()
+      expect(fetchMock).toHaveBeenCalledOnce()
+    },
+  )
 
   it.each([
     {},
