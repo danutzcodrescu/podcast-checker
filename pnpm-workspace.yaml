@@ -1,8 +1,10 @@
 allowBuilds:
   '@google/genai': false
   '@openrouter/sdk': false
+  cpu-features: false
   esbuild: true
   lightningcss: true
   protobufjs: false
   sharp: false
+  ssh2: false
 minimumReleaseAge: 1440

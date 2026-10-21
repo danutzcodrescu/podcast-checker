@@ -184,6 +184,14 @@ derived from that configuration. When adding a classifier, also provision its
 category for users; only an existing category belonging to the follower is assigned.
 Manual category changes always take precedence over an in-flight classification.
 
+`src/lib/podcast-follows.server.ts` owns follow saves, edits, unfollows, and the
+automatic categorisation lifecycle. Its two operations return the refreshed
+library; callers never coordinate categorisation tokens. Library queries remain
+in `src/lib/podcast-library-query.server.ts`, and the existing authenticated
+server functions in `src/lib/podcast-library.ts` retain their input validation.
+Removing and re-adding a follow starts a new categorisation attempt; an older
+attempt cannot change that follow or cancel its new attempt.
+
 ## Agent skills
 
 `@tanstack/intent` is installed as a development dependency. Run `pnpm intent list`
@@ -260,6 +268,13 @@ npm run build
 
 - `pnpm test` runs Vitest component tests with Testing Library.
 - `pnpm test:watch` runs the component tests in watch mode.
+- `pnpm test:follows` runs the follow lifecycle integration tests with Testcontainers.
+  Docker must be running. The suite starts an isolated `pgvector/pgvector:pg18`
+  container, applies migrations, and removes the container afterward; it never
+  uses the application's database. RSS and model adapters are controlled in tests.
+  The normal test run skips this suite unless `PODCAST_TEST_CONTAINERS=true` or
+  `PODCAST_TEST_DATABASE_URL` is set. The latter supports an existing dedicated
+  test database without starting a container.
 - `pnpm exec playwright install chromium webkit` installs the browsers for end-to-end tests.
 - `pnpm test:e2e` runs the Playwright starter suite and starts the app automatically.
 - `pnpm test:e2e:ui` opens Playwright’s interactive test runner.

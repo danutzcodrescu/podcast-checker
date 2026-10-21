@@ -30,6 +30,7 @@
     "prepare": "husky",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:follows": "PODCAST_TEST_CONTAINERS=true vitest run src/lib/podcast-follows.integration.test.ts",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui"
@@ -85,6 +86,7 @@
     "@tanstack/devtools-vite": "0.8.5",
     "@tanstack/intent": "^0.5.6",
     "@tanstack/router-cli": "^1.167.45",
+    "@testcontainers/postgresql": "^12.2.1",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.8",

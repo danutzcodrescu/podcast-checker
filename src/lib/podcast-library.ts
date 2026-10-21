@@ -1,12 +1,9 @@
 import { createServerFn } from '@tanstack/react-start'
-import { randomUUID } from 'node:crypto'
-import { and, asc, desc, eq, ne, sql } from 'drizzle-orm'
+import { and, eq, ne, sql } from 'drizzle-orm'
 
 import { db } from '#/db'
 import { followedPodcast, podcastCategory } from '#/db/library-schema'
-import { episodeEmbedding, podcastEpisode, podcastFeed } from '#/db/ingestion-schema'
-import type { Podcast } from '#/lib/apple-podcasts'
-import type { PodcastSync } from '#/lib/podcast-sync'
+import { episodeEmbedding, podcastFeed } from '#/db/ingestion-schema'
 import { requireAuth } from '#/lib/auth-middleware'
 import {
   categoryId,
@@ -14,73 +11,13 @@ import {
   podcastIdInput,
   savePodcastInput,
 } from '#/lib/podcast-library-input'
+import { readPodcastLibrary } from './podcast-library-query.server'
 
-async function readLibrary(userId: string) {
-  const counts = db
-    .select({
-      feedId: podcastEpisode.feedId,
-      episodes: sql<number>`count(*)::int`.as('episode_count'),
-      embedded: sql<number>`count(*) filter (where ${episodeEmbedding.status} = 'ready')::int`.as(
-        'embedded_count',
-      ),
-      failed: sql<number>`count(*) filter (where ${episodeEmbedding.status} = 'failed')::int`.as(
-        'failed_count',
-      ),
-    })
-    .from(podcastEpisode)
-    .leftJoin(episodeEmbedding, eq(episodeEmbedding.episodeId, podcastEpisode.id))
-    .where(
-      sql`${podcastEpisode.feedId} in (select feed_id from followed_podcast where user_id = ${userId})`,
-    )
-    .groupBy(podcastEpisode.feedId)
-    .as('episode_counts')
-  const [rows, categories] = await Promise.all([
-    db
-      .select({
-        podcast: followedPodcast.podcast,
-        categories: followedPodcast.categories,
-        feed: {
-          id: podcastFeed.id,
-          status: podcastFeed.status,
-          lastSyncedAt: podcastFeed.lastSyncedAt,
-        },
-        episodes: counts.episodes,
-        embedded: counts.embedded,
-        failed: counts.failed,
-      })
-      .from(followedPodcast)
-      .leftJoin(podcastFeed, eq(podcastFeed.id, followedPodcast.feedId))
-      .leftJoin(counts, eq(counts.feedId, podcastFeed.id))
-      .where(eq(followedPodcast.userId, userId))
-      .orderBy(desc(followedPodcast.followedAt), asc(followedPodcast.podcastId)),
-    db
-      .select({ id: podcastCategory.id, name: podcastCategory.name })
-      .from(podcastCategory)
-      .where(eq(podcastCategory.userId, userId))
-      .orderBy(asc(podcastCategory.name)),
-  ])
-  const podcasts: { podcast: Podcast; categories: string[]; sync?: PodcastSync | null }[] =
-    rows.map((row) => ({
-      podcast: row.podcast,
-      categories: row.categories,
-      sync: row.feed
-        ? {
-            status: row.feed.status,
-            episodes: row.episodes ?? 0,
-            embedded: row.embedded ?? 0,
-            failed: row.failed ?? 0,
-            lastSyncedAt: row.feed.lastSyncedAt?.toISOString() ?? null,
-          }
-        : null,
-    }))
-  return { podcasts, categories }
-}
-
-export type PodcastLibrary = Awaited<ReturnType<typeof readLibrary>>
+export type PodcastLibrary = Awaited<ReturnType<typeof readPodcastLibrary>>
 
 export const getPodcastLibrary = createServerFn({ method: 'GET' })
   .middleware([requireAuth])
-  .handler(({ context }) => readLibrary(context.session.user.id))
+  .handler(({ context }) => readPodcastLibrary(context.session.user.id))
 
 export const getDefaultPodcastRoute = createServerFn({ method: 'GET' })
   .middleware([requireAuth])
@@ -97,60 +34,8 @@ export const saveFollowedPodcast = createServerFn({ method: 'POST' })
   .middleware([requireAuth])
   .validator(savePodcastInput)
   .handler(async ({ context, data }) => {
-    const userId = context.session.user.id
-    const categories = [
-      ...new Map(data.categories.map((name) => [categoryId(name), name])).entries(),
-    ]
-    const token =
-      !categories.length && data.podcast.feedUrl && process.env.OPENROUTER_API_KEY
-        ? randomUUID()
-        : null
-    const saved = await db.transaction(async (tx) => {
-      let feedId: string | null = null
-      if (data.podcast.feedUrl) {
-        const url = new URL(data.podcast.feedUrl)
-        url.hash = ''
-        const [feed] = await tx
-          .insert(podcastFeed)
-          .values({ url: url.href })
-          .onConflictDoUpdate({ target: podcastFeed.url, set: { url: url.href } })
-          .returning({ id: podcastFeed.id })
-        feedId = feed.id
-      }
-      if (categories.length) {
-        await tx
-          .insert(podcastCategory)
-          .values(categories.map(([id, name]) => ({ userId, id, name })))
-          .onConflictDoNothing()
-      }
-      const values = {
-        userId,
-        podcastId: data.podcast.id,
-        podcast: data.podcast,
-        feedId,
-        categories: categories.map(([id]) => id),
-        categorisationToken: token,
-      }
-      const [row] = await tx
-        .insert(followedPodcast)
-        .values(values)
-        .onConflictDoUpdate({
-          target: [followedPodcast.userId, followedPodcast.podcastId],
-          set: {
-            podcast: values.podcast,
-            categories: values.categories,
-            feedId,
-            categorisationToken: null,
-          },
-        })
-        .returning({ token: followedPodcast.categorisationToken })
-      return row
-    })
-    if (saved.token && data.podcast.feedUrl) {
-      const { categoriseFollow } = await import('./podcast-categorisation')
-      await categoriseFollow(userId, data.podcast.id, saved.token, data.podcast.feedUrl)
-    }
-    return readLibrary(userId)
+    const { savePodcastFollow } = await import('./podcast-follows.server')
+    return savePodcastFollow(context.session.user.id, data)
   })
 
 export const retryPodcastIngestion = createServerFn({ method: 'POST' })
@@ -178,44 +63,15 @@ export const retryPodcastIngestion = createServerFn({ method: 'POST' })
           ),
         )
     })
-    return readLibrary(userId)
+    return readPodcastLibrary(userId)
   })
 
 export const unfollowPodcast = createServerFn({ method: 'POST' })
   .middleware([requireAuth])
   .validator(podcastIdInput)
   .handler(async ({ context, data }) => {
-    const userId = context.session.user.id
-    await db.transaction(async (tx) => {
-      const [followed] = await tx
-        .select({ feedId: followedPodcast.feedId })
-        .from(followedPodcast)
-        .where(and(eq(followedPodcast.userId, userId), eq(followedPodcast.podcastId, data)))
-      // Follow also locks the feed before changing the library. Serialize cleanup
-      // on that same row so concurrent follows/unfollows cannot leave an orphan.
-      if (followed?.feedId) {
-        await tx
-          .select({ id: podcastFeed.id })
-          .from(podcastFeed)
-          .where(eq(podcastFeed.id, followed.feedId))
-          .for('update')
-      }
-      const [removed] = await tx
-        .delete(followedPodcast)
-        .where(and(eq(followedPodcast.userId, userId), eq(followedPodcast.podcastId, data)))
-        .returning({ feedId: followedPodcast.feedId })
-      if (!removed?.feedId) return
-      // Existing foreign-key cascades delete the feed's episodes and embeddings.
-      await tx
-        .delete(podcastFeed)
-        .where(
-          and(
-            eq(podcastFeed.id, removed.feedId),
-            sql`not exists (select 1 from ${followedPodcast} where ${followedPodcast.feedId} = ${podcastFeed.id})`,
-          ),
-        )
-    })
-    return readLibrary(userId)
+    const { removePodcastFollow } = await import('./podcast-follows.server')
+    return removePodcastFollow(context.session.user.id, data)
   })
 
 export const createPodcastCategory = createServerFn({ method: 'POST' })
@@ -227,5 +83,5 @@ export const createPodcastCategory = createServerFn({ method: 'POST' })
       .insert(podcastCategory)
       .values({ userId, id: categoryId(data), name: data })
       .onConflictDoNothing()
-    return readLibrary(userId)
+    return readPodcastLibrary(userId)
   })
