@@ -1,10 +1,15 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import type { ComponentPropsWithoutRef } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { LatestEpisodesPage } from '#/components/LatestEpisodesPage'
+import { defaultEpisodeFilters } from '#/lib/episode-search-params'
+import type { EpisodeFilters } from '#/lib/latest-episodes'
+import { episodeScope, latestEpisodesQueryOptions } from '#/lib/episode-queries'
+import { libraryQueryOptions } from '#/lib/library-queries'
 import * as localeRuntime from '#/paraglide/runtime'
 
 const mocks = vi.hoisted(() => ({
@@ -60,10 +65,25 @@ const episode = {
   categories: ['development'],
 }
 
-function renderPage() {
+function renderPage(initialFilters: Partial<EpisodeFilters> = {}) {
+  // Stand-in for the route, which keeps the filters in the URL.
+  function Harness() {
+    const [filters, setFilters] = useState<EpisodeFilters>({
+      ...defaultEpisodeFilters,
+      ...initialFilters,
+    })
+    return (
+      <LatestEpisodesPage
+        email="listener@example.com"
+        filters={filters}
+        onFiltersChange={setFilters}
+      />
+    )
+  }
+
   return render(
     <QueryClientProvider client={new QueryClient()}>
-      <LatestEpisodesPage email="listener@example.com" />
+      <Harness />
     </QueryClientProvider>,
   )
 }
@@ -358,6 +378,42 @@ describe('latest episodes page', () => {
       data: expect.objectContaining({ offset: 0, searchSessionId: undefined }),
     })
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('drops a podcast filter that is not in the library', async () => {
+    renderPage({ podcastId: 999 })
+    await waitFor(() =>
+      expect(mocks.episodes).toHaveBeenLastCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ podcastId: null }) }),
+      ),
+    )
+    expect(screen.getByRole('combobox', { name: 'Filter episodes by podcast' })).toHaveValue('')
+  })
+
+  it('renders the prefetched library and episodes without refetching', async () => {
+    const queryClient = new QueryClient()
+    const email = 'listener@example.com'
+    // Mirror what the route loader puts in the cache before rendering.
+    const library = await queryClient.query(libraryQueryOptions(email))
+    await queryClient.infiniteQuery(
+      latestEpisodesQueryOptions(email, defaultEpisodeFilters, episodeScope(library)),
+    )
+    mocks.library.mockClear()
+    mocks.episodes.mockClear()
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <LatestEpisodesPage
+          email={email}
+          filters={defaultEpisodeFilters}
+          onFiltersChange={() => undefined}
+        />
+      </QueryClientProvider>,
+    )
+
+    expect(screen.getByRole('heading', { name: 'JavaScript patterns' })).toBeInTheDocument()
+    expect(mocks.library).not.toHaveBeenCalled()
+    expect(mocks.episodes).not.toHaveBeenCalled()
   })
 
   it('localizes episode metadata, controls, and navigation in French', async () => {

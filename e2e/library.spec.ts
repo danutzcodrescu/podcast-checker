@@ -8,10 +8,6 @@ import { followedPodcast, podcastCategory } from '../src/db/library-schema'
 import { episodeEmbedding, podcastEpisode, podcastFeed } from '../src/db/ingestion-schema'
 import { embeddingDimensions, embeddingModel, preprocessingVersion } from '../src/lib/episode-text'
 
-test.afterAll(async () => {
-  await db.$client.end()
-})
-
 async function seedEpisode(feedId: string) {
   const [episode] = await db
     .insert(podcastEpisode)
@@ -105,9 +101,15 @@ test('persists category edits and unfollowing, with account-isolated libraries a
       await expect(editor.getByRole('checkbox', { name: 'Development' })).toBeChecked()
       await editor.getByRole('button', { name: 'Save categories' }).click()
       await expect(editor).toHaveCount(0)
-      expect(
-        await db.select().from(podcastCategory).where(eq(podcastCategory.userId, userIds[0])),
-      ).toEqual([{ userId: userIds[0], id: 'development', name: 'Development' }])
+      // Signing up seeds the default categories, so only the tag this test
+      // creates is relevant to the row-reuse assertion.
+      const categories = await db
+        .select()
+        .from(podcastCategory)
+        .where(eq(podcastCategory.userId, userIds[0]))
+      expect(categories.filter(({ id }) => id === 'development')).toEqual([
+        { userId: userIds[0], id: 'development', name: 'Development' },
+      ])
       const [saved] = await db
         .select({ categories: followedPodcast.categories })
         .from(followedPodcast)
@@ -159,6 +161,8 @@ test('persists category edits and unfollowing, with account-isolated libraries a
     await expect(sidebar.getByRole('button', { name: 'Followed podcasts 0' })).toBeVisible()
 
     const accountTrigger = page.getByRole('button', { name: 'Account menu' })
+    // The trigger stays disabled until React takes over; focus alone would be a no-op before that.
+    await expect(accountTrigger).toBeEnabled()
     await accountTrigger.focus()
     await accountTrigger.press('Enter')
     await expect(page.getByRole('menu')).toBeVisible()

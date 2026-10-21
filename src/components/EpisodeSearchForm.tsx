@@ -3,25 +3,47 @@ import { useRef, useState } from 'react'
 
 import { Button } from '#/components/ui/Button'
 import { NativeSelect } from '#/components/ui/NativeSelect'
+import { episodeTermMaxLength } from '#/lib/episode-search-input'
 import type { EpisodeSearchMode } from '#/lib/latest-episodes'
 import { m } from '#/paraglide/messages'
 
+type SearchDraft = {
+  term: string
+  mode: EpisodeSearchMode
+}
+
 export function EpisodeSearchForm({
+  searchTerm,
+  searchMode,
   active,
   pending,
   disabled,
   onSearch,
   onClear,
 }: {
+  searchTerm: string
+  searchMode: EpisodeSearchMode
   active: boolean
   pending: boolean
   disabled: boolean
   onSearch: (term: string, mode: EpisodeSearchMode) => void
   onClear: () => void
 }) {
-  const [term, setTerm] = useState('')
-  const [mode, setMode] = useState<EpisodeSearchMode>('hybrid')
+  // The submitted search lives in the URL; keep a draft so typing does not navigate. Any change to
+  // the submitted values (submit, back/forward, a shared link) drops the draft, so the form always
+  // reflects the URL again — including when the URL returns to the state the draft was typed in.
+  const [draft, setDraft] = useState<SearchDraft | null>(null)
+  const [submitted, setSubmitted] = useState({ searchTerm, searchMode })
+  if (submitted.searchTerm !== searchTerm || submitted.searchMode !== searchMode) {
+    setSubmitted({ searchTerm, searchMode })
+    setDraft(null)
+  }
+  const term = draft ? draft.term : searchTerm
+  const mode = draft ? draft.mode : searchMode
   const inputRef = useRef<HTMLInputElement>(null)
+  function draftFor(patch: Partial<SearchDraft>): SearchDraft {
+    return { term, mode, ...patch }
+  }
   return (
     <search className="mb-6" aria-label={m.episodes_search_label()}>
       <form
@@ -41,10 +63,10 @@ export function EpisodeSearchForm({
             aria-describedby="episodes-search-help"
             placeholder={m.episodes_search_placeholder()}
             value={term}
-            maxLength={200}
+            maxLength={episodeTermMaxLength}
             autoComplete="off"
             disabled={disabled}
-            onChange={(event) => setTerm(event.target.value)}
+            onChange={(event) => setDraft(draftFor({ term: event.target.value }))}
           />
           {(term || active) && (
             <Button
@@ -53,7 +75,7 @@ export function EpisodeSearchForm({
               size="icon"
               aria-label={m.episodes_search_clear()}
               onClick={() => {
-                setTerm('')
+                setDraft(draftFor({ term: '' }))
                 onClear()
                 inputRef.current?.focus()
               }}
@@ -68,7 +90,9 @@ export function EpisodeSearchForm({
             className="h-12 rounded-lg bg-surface"
             value={mode}
             disabled={disabled}
-            onChange={(event) => setMode(event.target.value as EpisodeSearchMode)}
+            onChange={(event) =>
+              setDraft(draftFor({ mode: event.target.value as EpisodeSearchMode }))
+            }
           >
             <option value="hybrid">{m.episodes_search_hybrid()}</option>
             <option value="text">{m.episodes_search_text()}</option>

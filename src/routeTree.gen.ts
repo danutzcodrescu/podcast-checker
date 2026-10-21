@@ -10,10 +10,11 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as DiscoverRouteImport } from './routes/discover'
-import { Route as LatestEpisodesRouteImport } from './routes/latest-episodes'
+import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as SigninRouteImport } from './routes/signin'
 import { Route as SignupRouteImport } from './routes/signup'
+import { Route as AuthenticatedDiscoverRouteImport } from './routes/_authenticated/discover'
+import { Route as AuthenticatedLatestEpisodesRouteImport } from './routes/_authenticated/latest-episodes'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
 const IndexRoute = IndexRouteImport.update({
@@ -21,14 +22,8 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DiscoverRoute = DiscoverRouteImport.update({
-  id: '/discover',
-  path: '/discover',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LatestEpisodesRoute = LatestEpisodesRouteImport.update({
-  id: '/latest-episodes',
-  path: '/latest-episodes',
+const AuthenticatedRoute = AuthenticatedRouteImport.update({
+  id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SigninRoute = SigninRouteImport.update({
@@ -41,6 +36,17 @@ const SignupRoute = SignupRouteImport.update({
   path: '/signup',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedDiscoverRoute = AuthenticatedDiscoverRouteImport.update({
+  id: '/discover',
+  path: '/discover',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedLatestEpisodesRoute =
+  AuthenticatedLatestEpisodesRouteImport.update({
+    id: '/latest-episodes',
+    path: '/latest-episodes',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -49,60 +55,61 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/discover': typeof DiscoverRoute
-  '/latest-episodes': typeof LatestEpisodesRoute
   '/signin': typeof SigninRoute
   '/signup': typeof SignupRoute
+  '/discover': typeof AuthenticatedDiscoverRoute
+  '/latest-episodes': typeof AuthenticatedLatestEpisodesRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/discover': typeof DiscoverRoute
-  '/latest-episodes': typeof LatestEpisodesRoute
   '/signin': typeof SigninRoute
   '/signup': typeof SignupRoute
+  '/discover': typeof AuthenticatedDiscoverRoute
+  '/latest-episodes': typeof AuthenticatedLatestEpisodesRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/discover': typeof DiscoverRoute
-  '/latest-episodes': typeof LatestEpisodesRoute
+  '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/signin': typeof SigninRoute
   '/signup': typeof SignupRoute
+  '/_authenticated/discover': typeof AuthenticatedDiscoverRoute
+  '/_authenticated/latest-episodes': typeof AuthenticatedLatestEpisodesRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/discover'
-    | '/latest-episodes'
     | '/signin'
     | '/signup'
+    | '/discover'
+    | '/latest-episodes'
     | '/api/auth/$'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/discover'
-    | '/latest-episodes'
     | '/signin'
     | '/signup'
+    | '/discover'
+    | '/latest-episodes'
     | '/api/auth/$'
   id:
     | '__root__'
     | '/'
-    | '/discover'
-    | '/latest-episodes'
+    | '/_authenticated'
     | '/signin'
     | '/signup'
+    | '/_authenticated/discover'
+    | '/_authenticated/latest-episodes'
     | '/api/auth/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  DiscoverRoute: typeof DiscoverRoute
-  LatestEpisodesRoute: typeof LatestEpisodesRoute
+  AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   SigninRoute: typeof SigninRoute
   SignupRoute: typeof SignupRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
@@ -117,18 +124,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/discover': {
-      id: '/discover'
-      path: '/discover'
-      fullPath: '/discover'
-      preLoaderRoute: typeof DiscoverRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/latest-episodes': {
-      id: '/latest-episodes'
-      path: '/latest-episodes'
-      fullPath: '/latest-episodes'
-      preLoaderRoute: typeof LatestEpisodesRouteImport
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/signin': {
@@ -145,6 +145,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SignupRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/discover': {
+      id: '/_authenticated/discover'
+      path: '/discover'
+      fullPath: '/discover'
+      preLoaderRoute: typeof AuthenticatedDiscoverRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/latest-episodes': {
+      id: '/_authenticated/latest-episodes'
+      path: '/latest-episodes'
+      fullPath: '/latest-episodes'
+      preLoaderRoute: typeof AuthenticatedLatestEpisodesRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -155,10 +169,23 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AuthenticatedRouteChildren {
+  AuthenticatedDiscoverRoute: typeof AuthenticatedDiscoverRoute
+  AuthenticatedLatestEpisodesRoute: typeof AuthenticatedLatestEpisodesRoute
+}
+
+const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedDiscoverRoute: AuthenticatedDiscoverRoute,
+  AuthenticatedLatestEpisodesRoute: AuthenticatedLatestEpisodesRoute,
+}
+
+const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
+  AuthenticatedRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  DiscoverRoute: DiscoverRoute,
-  LatestEpisodesRoute: LatestEpisodesRoute,
+  AuthenticatedRoute: AuthenticatedRouteWithChildren,
   SigninRoute: SigninRoute,
   SignupRoute: SignupRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,

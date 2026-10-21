@@ -1,7 +1,7 @@
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { Check, ChevronDown, ListPlus, LoaderCircle, RefreshCw } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { CategoryBadge, PodcastArtwork } from '#/components/PodcastCard'
 import { EpisodeSearchForm } from '#/components/EpisodeSearchForm'
@@ -14,11 +14,16 @@ import { NativeSelect } from '#/components/ui/NativeSelect'
 import { usePodcastLibrary } from '#/hooks/use-podcast-library'
 import { usePocketCasts } from '#/hooks/use-pocket-casts'
 import type { PocketCastsIntegration } from '#/hooks/use-pocket-casts'
-import { getLatestEpisodes } from '#/lib/latest-episodes'
 import type { EpisodeFilters, LatestEpisode } from '#/lib/latest-episodes'
+import { episodeScope, latestEpisodesQueryOptions } from '#/lib/episode-queries'
 import { episodeSearchExpired } from '#/lib/episode-search-input'
 import { m } from '#/paraglide/messages'
 import { getLocale } from '#/paraglide/runtime'
+
+export type OnEpisodeFiltersChange = (
+  update: (current: EpisodeFilters) => EpisodeFilters,
+  options?: { push?: boolean },
+) => void
 
 function dayLabel(publishedAt: string | null, locale: string, now: number) {
   if (!publishedAt) return m.episodes_unknown_date()
@@ -141,18 +146,23 @@ function EpisodeCard({
   )
 }
 
-export function LatestEpisodesPage({ email }: { email: string }) {
+export function LatestEpisodesPage({
+  email,
+  filters,
+  onFiltersChange,
+}: {
+  email: string
+  filters: EpisodeFilters
+  /**
+   * Updates are functional so they never read the filters captured by the current render. A
+   * navigation only commits after its transition, so changes made while it is pending must be
+   * applied to the filters stored in the URL, not to the ones this render saw.
+   */
+  onFiltersChange: OnEpisodeFiltersChange
+}) {
   const library = usePodcastLibrary(email)
   const pocketCasts = usePocketCasts(email)
   const [term, setTerm] = useState('')
-  const [filters, setFilters] = useState<EpisodeFilters>({
-    podcastId: null,
-    categoryId: null,
-    days: 7,
-    sort: 'newest',
-    term: '',
-    searchMode: 'hybrid',
-  })
   const normalizedTerm = term.trim().toLowerCase()
   const matches = useMemo(
     () =>
@@ -168,33 +178,17 @@ export function LatestEpisodesPage({ email }: { email: string }) {
         ? { type: 'category', id: filters.categoryId }
         : { type: 'all' }
   function onFilterChange(next: PodcastLibraryFilter) {
-    setFilters((current) => ({
+    onFiltersChange((current) => ({
       ...current,
       podcastId: next?.type === 'podcast' ? next.id : null,
       categoryId: next?.type === 'category' ? next.id : null,
     }))
   }
+  // Same shape the route loader derives from the prefetched library, so the query key matches.
+  const episodesScope = useMemo(() => episodeScope(library.source), [library.source])
   const episodes = useInfiniteQuery({
-    queryKey: [
-      'latest-episodes',
-      email,
-      filters,
-      library.podcasts.map(({ podcast, categoryIds }) => [podcast.id, categoryIds]),
-    ],
-    queryFn: ({ pageParam }) => getLatestEpisodes({ data: { ...filters, ...pageParam } }),
-    initialPageParam: { offset: 0, searchSessionId: undefined as string | undefined },
-    getNextPageParam: (page) =>
-      page.nextOffset === null
-        ? undefined
-        : {
-            offset: page.nextOffset,
-            searchSessionId: page.searchSessionId ?? undefined,
-          },
+    ...latestEpisodesQueryOptions(email, filters, episodesScope),
     enabled: !library.disabled,
-    retry: false,
-    refetchInterval: filters.term ? false : 30_000,
-    refetchOnWindowFocus: !filters.term,
-    staleTime: filters.term ? 5 * 60_000 : 0,
   })
   const locale = getLocale()
   const groups = useMemo(() => {
@@ -212,6 +206,27 @@ export function LatestEpisodesPage({ email }: { email: string }) {
     }
     return [...result.entries()]
   }, [episodes.data, episodes.dataUpdatedAt, locale, filters.term, filters.sort])
+
+  // A shared link can name a podcast or tag that is not in this account's library. Drop it once
+  // the library is known so the controls and the URL describe the same view.
+  const libraryLoaded = !library.isPending && !library.isError
+  const unknownPodcast =
+    libraryLoaded &&
+    filters.podcastId !== null &&
+    !library.podcasts.some(({ podcast }) => podcast.id === filters.podcastId)
+  const unknownCategory =
+    libraryLoaded &&
+    filters.categoryId !== null &&
+    !library.categories.some(({ id }) => id === filters.categoryId)
+
+  useEffect(() => {
+    if (!unknownPodcast && !unknownCategory) return
+    onFiltersChange((current) => ({
+      ...current,
+      podcastId: unknownPodcast ? null : current.podcastId,
+      categoryId: unknownCategory ? null : current.categoryId,
+    }))
+  }, [unknownPodcast, unknownCategory, onFiltersChange])
 
   return (
     <PodcastPageShell email={email} activeTab="latest-episodes">
@@ -250,6 +265,8 @@ export function LatestEpisodesPage({ email }: { email: string }) {
           </div>
           <PocketCastsConnection integration={pocketCasts} />
           <EpisodeSearchForm
+            searchTerm={filters.term}
+            searchMode={filters.searchMode}
             active={Boolean(filters.term)}
             pending={episodes.isFetching}
             disabled={library.disabled}
@@ -261,16 +278,21 @@ export function LatestEpisodesPage({ email }: { email: string }) {
               ) {
                 void episodes.refetch()
               } else {
-                setFilters((current) => ({
-                  ...current,
-                  term: query,
-                  searchMode,
-                  sort: 'relevance',
-                }))
+                onFiltersChange(
+                  (current) => ({
+                    ...current,
+                    term: query,
+                    searchMode,
+                    sort: 'relevance',
+                  }),
+                  // A search is a deliberate destination: Back should return to the list the user
+                  // was browsing. Dropdown and sidebar changes replace instead.
+                  { push: true },
+                )
               }
             }}
             onClear={() =>
-              setFilters((current) => ({
+              onFiltersChange((current) => ({
                 ...current,
                 term: '',
                 sort: current.sort === 'relevance' ? 'newest' : current.sort,
@@ -290,7 +312,7 @@ export function LatestEpisodesPage({ email }: { email: string }) {
                 value={filters.podcastId ?? ''}
                 disabled={library.disabled}
                 onChange={(event) =>
-                  setFilters((current) => ({
+                  onFiltersChange((current) => ({
                     ...current,
                     podcastId: event.target.value ? Number(event.target.value) : null,
                   }))
@@ -311,7 +333,10 @@ export function LatestEpisodesPage({ email }: { email: string }) {
                 value={filters.categoryId ?? ''}
                 disabled={library.disabled}
                 onChange={(event) =>
-                  setFilters((current) => ({ ...current, categoryId: event.target.value || null }))
+                  onFiltersChange((current) => ({
+                    ...current,
+                    categoryId: event.target.value || null,
+                  }))
                 }
               >
                 <option value="">{m.episodes_all_tags()}</option>
@@ -327,8 +352,9 @@ export function LatestEpisodesPage({ email }: { email: string }) {
               <NativeSelect
                 className="h-12 rounded-lg bg-surface"
                 value={filters.days ?? ''}
+                disabled={library.disabled}
                 onChange={(event) =>
-                  setFilters((current) => ({
+                  onFiltersChange((current) => ({
                     ...current,
                     days: event.target.value
                       ? (Number(event.target.value) as EpisodeFilters['days'])
@@ -359,8 +385,9 @@ export function LatestEpisodesPage({ email }: { email: string }) {
               <span className="sr-only">{m.episodes_sort()}</span>
               <NativeSelect
                 value={filters.sort}
+                disabled={library.disabled}
                 onChange={(event) =>
-                  setFilters((current) => ({
+                  onFiltersChange((current) => ({
                     ...current,
                     sort: event.target.value as EpisodeFilters['sort'],
                   }))

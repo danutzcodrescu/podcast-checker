@@ -416,6 +416,12 @@ Use **Search episodes** on Latest episodes and press Enter or **Search**:
 Search respects podcast, tag, and date filters; choose **All time** to include
 older episodes. Searches initially use **Most relevant** sorting; you can switch
 to publication-date ordering. Clearing search returns to the episode list.
+
+The search term, podcast, tag, date range, sort order, and search mode live in
+the URL (`q`, `podcast`, `category`, `days`, `sort`, and `mode`). Reloading the
+page, sharing the address, or navigating with Back and Forward therefore restores
+the same view. Submitting a search adds a history entry; changing a dropdown
+replaces the current one.
 Semantic-only matches are labeled in results.
 
 Semantic search uses the server’s `CLOUDFLARE_ACCOUNT_ID` and

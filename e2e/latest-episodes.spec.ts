@@ -1,15 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import { expect, test } from '@playwright/test'
-import { inArray } from 'drizzle-orm'
+import { inArray, sql } from 'drizzle-orm'
 
 import { db } from '../src/db/index'
 import { user as users } from '../src/db/auth-schema'
 import { podcastEpisode, podcastFeed } from '../src/db/ingestion-schema'
 import { followedPodcast, podcastCategory } from '../src/db/library-schema'
-
-test.afterAll(async () => {
-  await db.$client.end()
-})
 
 function episode(feedId: string, title: string, publishedAt: Date | null) {
   return {
@@ -76,10 +72,20 @@ test('chooses the login landing page and displays only followed episodes with wo
       feedUrl: feed.url,
       artworkUrl: null,
     }))
-    await db.insert(podcastCategory).values([
-      { userId: userIds[0], id: 'development', name: 'Development' },
-      { userId: userIds[0], id: 'history', name: 'History' },
-    ])
+    // Signing up already seeds the default categories (sport, story, history,
+    // web), so upsert the ones this spec needs instead of assuming an empty
+    // table. The display names are set explicitly because the seed uses the
+    // normalized id as the name.
+    await db
+      .insert(podcastCategory)
+      .values([
+        { userId: userIds[0], id: 'development', name: 'Development' },
+        { userId: userIds[0], id: 'history', name: 'History' },
+      ])
+      .onConflictDoUpdate({
+        target: [podcastCategory.userId, podcastCategory.id],
+        set: { name: sql`excluded.name` },
+      })
     await db.insert(followedPodcast).values(
       podcasts.map((podcast, index) => ({
         userId: userIds[index === 2 ? 1 : 0],
@@ -127,10 +133,32 @@ test('chooses the login landing page and displays only followed episodes with wo
       'aria-current',
       'page',
     )
+    // This spec seeds rows directly in the database, so start a new document (and query cache).
+    await page.reload()
     await expect(page.getByText('28 episodes', { exact: true })).toBeVisible()
     await expect(
       page.getByRole('heading', { name: 'Development episode 01', exact: true }),
     ).toBeVisible()
+    // The first page must be server-rendered, not fetched after hydration.
+    const serverRendered = await page.request.get('/latest-episodes')
+    expect(serverRendered.ok()).toBe(true)
+    expect(await serverRendered.text()).toContain('Development episode 01')
+    // A search stays off the server render path: no results in the HTML, fetched after hydration.
+    const searching = await page.request.get('/latest-episodes?q=water%20transport&mode=text')
+    expect(searching.ok()).toBe(true)
+    expect(await searching.text()).not.toContain('Older development episode')
+    await page.goto('/latest-episodes?q=water%20transport&days=all&mode=text')
+    await expect(page.getByRole('searchbox', { name: 'Search episodes', exact: true })).toHaveValue(
+      'water transport',
+    )
+    await expect(
+      page.getByRole('heading', { name: 'Older development episode', exact: true }),
+    ).toBeVisible()
+    await expect.poll(() => new URL(page.url()).searchParams.get('days')).toBe('all')
+    await page.goto('/latest-episodes')
+    // The refresh control is disabled until hydration, so this waits for the page to be interactive.
+    await expect(page.getByRole('button', { name: 'Refresh episodes' })).toBeEnabled()
+    await expect(page.getByText('28 episodes', { exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'History yesterday', exact: true })).toHaveCount(
       0,
     )
@@ -144,17 +172,33 @@ test('chooses the login landing page and displays only followed episodes with wo
 
     await page.getByRole('combobox', { name: 'Filter episodes by podcast' }).selectOption('101')
     await expect(page.getByText('2 episodes', { exact: true })).toBeVisible()
+    await expect.poll(() => new URL(page.url()).searchParams.get('podcast')).toBe('101')
     await expect(
       page.getByRole('heading', { name: 'Development episode 01', exact: true }),
     ).toHaveCount(0)
+    // A filtered deep link is resolved by the server loader, not after hydration.
+    const filtered = await page.request.get('/latest-episodes?podcast=101&days=30')
+    expect(filtered.ok()).toBe(true)
+    const filteredHtml = await filtered.text()
+    expect(filteredHtml).toContain('History yesterday')
+    expect(filteredHtml).not.toContain('Development episode 01')
+    // The filters live in the URL, so a reload restores them.
+    await page.reload()
+    await expect(page.getByRole('combobox', { name: 'Filter episodes by podcast' })).toHaveValue(
+      '101',
+    )
+    await expect(page.getByText('2 episodes', { exact: true })).toBeVisible()
     await page.getByRole('combobox', { name: 'Filter episodes by tag' }).selectOption('development')
     await expect(page.getByRole('heading', { name: 'No episodes yet' })).toBeVisible()
+    await expect.poll(() => new URL(page.url()).searchParams.get('category')).toBe('development')
     await page.getByRole('combobox', { name: 'Filter episodes by podcast' }).selectOption('')
     await expect(page.getByText('26 episodes', { exact: true })).toBeVisible()
     await page.getByRole('combobox', { name: 'Filter episodes by tag' }).selectOption('')
     await page.getByRole('combobox', { name: 'Filter episodes by date' }).selectOption('')
     await expect(page.getByText('30 episodes', { exact: true })).toBeVisible()
+    await expect.poll(() => new URL(page.url()).searchParams.get('days')).toBe('all')
     await page.getByRole('combobox', { name: 'Sort episodes' }).selectOption('oldest')
+    await expect.poll(() => new URL(page.url()).searchParams.get('sort')).toBe('oldest')
     await expect(
       page.getByRole('heading', { name: 'Older development episode', exact: true }),
     ).toBeVisible()
@@ -201,6 +245,22 @@ test('chooses the login landing page and displays only followed episodes with wo
       page.getByText('27 episodes matching “development episode”', { exact: true }),
     ).toBeVisible()
     await expect(page.getByRole('combobox', { name: 'Sort episodes' })).toHaveValue('relevance')
+    await expect.poll(() => new URL(page.url()).searchParams.get('q')).toBe('development episode')
+    await expect.poll(() => new URL(page.url()).searchParams.get('mode')).toBe('text')
+    await expect.poll(() => new URL(page.url()).searchParams.get('sort')).toBe('relevance')
+    // Submitting adds a history entry: Back restores the list and the empty form, Forward the search.
+    await page.goBack()
+    await expect.poll(() => new URL(page.url()).searchParams.get('q')).toBeNull()
+    await expect(search).toHaveValue('')
+    await expect(page.getByText('31 episodes', { exact: true })).toBeVisible()
+    await expect(page.getByRole('combobox', { name: 'Sort episodes' })).toHaveValue('newest')
+    await page.goForward()
+    await expect.poll(() => new URL(page.url()).searchParams.get('q')).toBe('development episode')
+    await expect(search).toHaveValue('development episode')
+    await expect(page.getByRole('combobox', { name: 'Episode search mode' })).toHaveValue('text')
+    await expect(
+      page.getByText('27 episodes matching “development episode”', { exact: true }),
+    ).toBeVisible()
     await page.getByRole('button', { name: 'Load more episodes' }).click()
     await expect(
       page.getByRole('heading', { name: 'Older development episode', exact: true }),
@@ -235,7 +295,9 @@ test('chooses the login landing page and displays only followed episodes with wo
 
     await page.getByRole('button', { name: 'Account menu' }).click()
     await page.getByRole('menuitemradio', { name: 'Français' }).click()
-    await expect(page).toHaveURL('/fr/latest-episodes')
+    // Switching language keeps the current view (and therefore its search params).
+    await expect.poll(() => new URL(page.url()).pathname).toBe('/fr/latest-episodes')
+    await expect.poll(() => new URL(page.url()).searchParams.get('days')).toBe('all')
     await expect(
       page.getByRole('heading', { name: 'Derniers épisodes', exact: true }),
     ).toBeVisible()

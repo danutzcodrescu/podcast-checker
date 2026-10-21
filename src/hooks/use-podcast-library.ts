@@ -3,9 +3,9 @@ import { useHydrated } from '@tanstack/react-router'
 import { useCallback, useMemo } from 'react'
 
 import type { Podcast } from '#/lib/apple-podcasts'
+import { libraryQueryOptions } from '#/lib/library-queries'
 import {
   createPodcastCategory,
-  getPodcastLibrary,
   retryPodcastIngestion,
   saveFollowedPodcast,
   unfollowPodcast,
@@ -31,21 +31,13 @@ const emptyLibrary: PodcastLibrary = { podcasts: [], categories: [] }
 const emptyCategories: string[] = []
 
 export function usePodcastLibrary(email: string) {
-  const hydrated = useHydrated()
   const queryClient = useQueryClient()
-  const queryKey = useMemo(() => ['podcast-library', email], [email])
-  const {
-    data = emptyLibrary,
-    isPending,
-    isError,
-    refetch,
-  } = useQuery({
-    queryKey,
-    queryFn: () => getPodcastLibrary(),
-    enabled: hydrated,
-    retry: false,
-    refetchInterval: 15_000,
-  })
+  // Controls stay disabled until React takes over, matching the rest of the app: a click on
+  // server-rendered markup would otherwise be dropped.
+  const hydrated = useHydrated()
+  const libraryQuery = useMemo(() => libraryQueryOptions(email), [email])
+  const queryKey = libraryQuery.queryKey
+  const { data = emptyLibrary, isPending, isError, refetch } = useQuery(libraryQuery)
   const {
     mutateAsync,
     isPending: isSaving,
@@ -125,6 +117,8 @@ export function usePodcastLibrary(email: string) {
   const getCategoryName = useCallback((id: string) => indexes.categoryById.get(id)?.name, [indexes])
 
   return {
+    /** The server payload, which episode queries derive their scope from. */
+    source: data,
     podcasts: indexes.podcasts,
     categories: indexes.categories,
     isPending,

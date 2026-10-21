@@ -30,6 +30,7 @@ function LibraryCategories({ library, filter, onFilterChange }: LibraryNavigatio
               size="sm"
               className={`w-full justify-between px-2 text-left font-normal ${filter?.type === 'category' && filter.id === id ? 'bg-accent' : ''}`}
               aria-pressed={filter?.type === 'category' && filter.id === id}
+              disabled={library.disabled}
               onClick={() => onFilterChange({ type: 'category', id })}
             >
               <CategoryBadge name={name} /> <span className="text-muted-foreground">{count}</span>
@@ -118,6 +119,7 @@ export function PodcastLibrarySidebar({
         variant="ghost"
         size="sm"
         className="mb-4 min-h-0 w-full justify-start border-0 p-0 text-left text-lg font-bold"
+        disabled={library.disabled}
         onClick={() => onFilterChange({ type: 'all' })}
         aria-pressed={filter?.type === 'all'}
       >
@@ -134,6 +136,7 @@ export function PodcastLibrarySidebar({
           aria-label={m.library_filter()}
           placeholder={m.library_filter()}
           value={term}
+          disabled={library.disabled}
           onChange={(event) => onTermChange(event.target.value)}
         />
       </div>
@@ -166,6 +169,7 @@ export function PodcastLibrarySidebar({
                 variant="ghost"
                 size="sm"
                 className="min-h-0 w-full justify-start gap-3 p-1 text-left font-normal"
+                disabled={library.disabled}
                 onClick={() => onFilterChange({ type: 'podcast', id: podcast.id })}
                 aria-pressed={filter?.type === 'podcast' && filter.id === podcast.id}
               >
