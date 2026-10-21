@@ -1,5 +1,15 @@
 import { expect, test } from '@playwright/test'
 
+test('serves built assets without dev-server reload scripts', async ({ page }) => {
+  await page.goto('/signin')
+  await expect(page.getByLabel('Email address')).toBeEnabled()
+  // Development reloads can interrupt the navigations these browser tests exercise.
+  const resources = await page.evaluate(() =>
+    performance.getEntriesByType('resource').map(({ name }) => new URL(name).pathname),
+  )
+  expect(resources).not.toContain('/@vite/client')
+})
+
 for (const route of ['/signin', '/signup', '/fr/signin', '/fr/signup']) {
   test(`enables authentication fields on a direct visit to ${route}`, async ({ page }) => {
     await page.goto(route)

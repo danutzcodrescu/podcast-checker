@@ -19,8 +19,12 @@ export default defineConfig({
     { name: 'mobile-safari', use: { ...devices['iPhone 13'] } },
   ],
   webServer: {
-    command: 'pnpm exec vite dev --host 127.0.0.1 --port 4317 --strictPort',
+    // Test stable production assets: dev-server reloads can interrupt browser navigations.
+    // Only the preview runtime uses test mode, avoiding production auth rate limits on test accounts.
+    command:
+      'pnpm build && NODE_ENV=test pnpm exec vite preview --host 127.0.0.1 --port 4317 --strictPort',
     url: `${baseURL}/signin`,
+    timeout: 120_000,
     reuseExistingServer: false,
     env: {
       BETTER_AUTH_URL: baseURL,

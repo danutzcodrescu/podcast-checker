@@ -147,7 +147,8 @@ or databases in an already-initialized PostgreSQL volume.
   for integration tests. Those suites are skipped when unset; they apply migrations
   and modify test data, so never point it at production. Playwright uses the app's
   `DATABASE_URL` instead and supplies its own test auth URL/secret and server port.
-  It runs the Netlify-emulated Vite server. Enable the signup database flag for that test app.
+  It builds the app and runs Vite preview with `NODE_ENV=test` at runtime.
+  Enable the signup database flag for that test app.
 - `CI`: normally supplied by CI; enables Playwright's CI reporting/retry settings.
 
 On Netlify, configure runtime secrets in the **Functions** scope and set
@@ -274,6 +275,12 @@ job migrates its own pgvector database, enables registration, and runs all three
 Playwright projects. Failed browser tests upload traces and screenshots as an
 artifact retained for seven days. No repository secrets are required.
 
+Playwright builds the app before starting Vite preview, so development hot reloads
+cannot interrupt browser navigation or hydration. The build uses production mode;
+only the preview runtime uses `NODE_ENV=test` so repeated test-account creation
+does not hit Better Auth's production rate limits. Production authentication
+settings are unchanged.
+
 - `pnpm test` runs Vitest component tests with Testing Library.
 - `pnpm test:watch` runs the component tests in watch mode.
 - `pnpm test:follows` runs the follow lifecycle integration tests with Testcontainers.
@@ -288,7 +295,7 @@ artifact retained for seven days. No repository secrets are required.
   Snapshot persistence, retrieval, and reranking policy run unchanged; tests
   control query embeddings and the external scoring adapter, not fallback policy.
 - `pnpm exec playwright install chromium webkit` installs the browsers for end-to-end tests.
-- `pnpm test:e2e` runs the Playwright starter suite and starts the app automatically.
+- `pnpm test:e2e` runs the Playwright suite, building and starting the app automatically.
 - `pnpm test:e2e:ui` opens Playwright’s interactive test runner.
 
 Component tests cover authentication, podcast search, following, category
