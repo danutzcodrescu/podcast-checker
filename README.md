@@ -266,6 +266,14 @@ npm run build
 
 ## Tests
 
+GitHub Actions runs all tests on every push (or manually via **Actions → Tests**).
+The workflow in `.github/workflows/tests.yml` runs Vitest with both
+`PODCAST_TEST_CONTAINERS=true` and a disposable `PODCAST_TEST_DATABASE_URL`, so
+container-backed and database-only integration suites are enabled. A separate
+job migrates its own pgvector database, enables registration, and runs all three
+Playwright projects. Failed browser tests upload traces and screenshots as an
+artifact retained for seven days. No repository secrets are required.
+
 - `pnpm test` runs Vitest component tests with Testing Library.
 - `pnpm test:watch` runs the component tests in watch mode.
 - `pnpm test:follows` runs the follow lifecycle integration tests with Testcontainers.

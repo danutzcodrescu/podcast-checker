@@ -1,0 +1,98 @@
+name: Tests
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  vitest:
+    name: Vitest and Testcontainers
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://podcast_checker:podcast_checker@127.0.0.1:5432/podcast_checker_test
+      PODCAST_TEST_DATABASE_URL: postgresql://podcast_checker:podcast_checker@127.0.0.1:5432/podcast_checker_test
+      PODCAST_TEST_CONTAINERS: 'true'
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_USER: podcast_checker
+          POSTGRES_PASSWORD: podcast_checker
+          POSTGRES_DB: podcast_checker_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U podcast_checker -d podcast_checker_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.11.2
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Generate translations for Vitest
+        run: pnpm exec paraglide-js compile --project ./project.inlang --outdir ./src/paraglide --strategy url baseLocale
+      - name: Migrate the disposable integration database
+        run: pnpm db:migrate
+      - name: Run all Vitest suites, including database and Testcontainers tests
+        run: pnpm test --no-file-parallelism
+
+  e2e:
+    name: Playwright (Chromium, WebKit, mobile Safari)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: postgresql://podcast_checker:podcast_checker@127.0.0.1:5432/podcast_checker_e2e
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_USER: podcast_checker
+          POSTGRES_PASSWORD: podcast_checker
+          POSTGRES_DB: podcast_checker_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U podcast_checker -d podcast_checker_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.11.2
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Playwright browsers and system dependencies
+        run: pnpm exec playwright install --with-deps chromium webkit
+      - name: Migrate the disposable E2E database
+        run: pnpm db:migrate
+      - name: Enable registration for E2E accounts
+        run: >-
+          docker exec ${{ job.services.postgres.id }}
+          psql -U podcast_checker -d podcast_checker_e2e -v ON_ERROR_STOP=1
+          -c "UPDATE feature_flag SET enabled = true WHERE key = 'signup_enabled';"
+      - name: Run all Playwright projects
+        run: pnpm test:e2e --workers=2
+      - name: Upload Playwright failure traces and screenshots
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: test-results/
+          retention-days: 7
+          if-no-files-found: ignore
