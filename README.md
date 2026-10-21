@@ -426,14 +426,12 @@ calls during pagination and filtering. Searches run on submission and do not pol
 If the embedding provider is unavailable, combined search shows text results with
 an explanation; semantic-only search offers a retry or text search instead.
 
-Embedding calls use TanStack AI's `embed()` with `createCloudflareEmbedding()`.
-A small custom-fetch bridge preserves the Qwen model's native `documents`/`queries`
-payloads, query instruction, caller cancellation and 60-second deadline. It validates
-the provider envelope, row count and 1,024-dimensional vectors and sanitizes numeric
-Cloudflare error codes before the adapter's lifecycle can report an error. These
-compatibility checks remain app-owned because the generic Cloudflare adapter sends
-`text` inputs and does not forward cancellation yet. The embedding model and input
-preprocessing are unchanged; existing stored vectors do not need rebuilding.
+Embedding calls use an app-owned Cloudflare Workers AI adapter inside
+`embedEpisodes`. It sends the Qwen model's native `documents`/`queries` payloads and
+query instruction, forwards caller cancellation with a 60-second deadline, validates
+the provider envelope, row count and 1,024-dimensional vectors, and sanitizes numeric
+Cloudflare error codes. The embedding model and input preprocessing are unchanged;
+existing stored vectors do not need rebuilding.
 The ingestion CLI uses `tsconfig.scripts.json` to avoid
 tsx resolving an incomplete TypeScript source in TanStack AI's `fast-json-patch`
 dependency. Netlify bundles the production functions.

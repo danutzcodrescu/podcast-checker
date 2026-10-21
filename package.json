@@ -42,7 +42,6 @@
     "@tanstack/ai": "0.70.0",
     "@tanstack/ai-anthropic": "0.22.1",
     "@tanstack/ai-client": "0.40.0",
-    "@tanstack/ai-cloudflare": "0.3.1",
     "@tanstack/ai-gemini": "0.38.1",
     "@tanstack/ai-ollama": "0.12.1",
     "@tanstack/ai-openai": "0.30.1",

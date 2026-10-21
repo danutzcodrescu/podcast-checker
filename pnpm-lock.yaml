@@ -23,9 +23,6 @@ importers:
       '@tanstack/ai-client':
         specifier: 0.40.0
         version: 0.40.0(@opentelemetry/api@1.9.1)(zod@4.6.7)
-      '@tanstack/ai-cloudflare':
-        specifier: 0.3.1
-        version: 0.3.1(@tanstack/ai@0.70.0(@opentelemetry/api@1.9.1)(zod@4.6.7))(undici@8.12.3)(ws@8.22.0)(zod@4.6.7)
       '@tanstack/ai-gemini':
         specifier: 0.38.1
         version: 0.38.1(@tanstack/ai@0.70.0(@opentelemetry/api@1.9.1)(zod@4.6.7))(supports-color@7.2.0)
@@ -2804,11 +2801,6 @@ packages:
 
   '@tanstack/ai-client@0.40.0':
     resolution: {integrity: sha512-gIBMsz3SbuFGRaPtbtIN4mCFHvkPklA+ZG/t6AI7GscXGyIEECWlFJBAU+vYKHvmxZyI46Yhu6vdGNxKx05A+Q==}
-
-  '@tanstack/ai-cloudflare@0.3.1':
-    resolution: {integrity: sha512-+oQbqugp+2KUQaPR/RnGd5TzOpu4Mp5BqLdMt3DED+QLlM5PDQvCcTki1tvdGIl19OvXJKnmLdOcz4wo2SlJYA==}
-    peerDependencies:
-      '@tanstack/ai': ^0.70.0
 
   '@tanstack/ai-event-client@0.13.1':
     resolution: {integrity: sha512-lCPcshu6Sd4tFNeMSr+HXgdqCGupYU2cpJZVUent4GkFx41dXzrBaKkwOgkji6olDBT99OBagWCce1NZ15XeJA==}
@@ -7422,7 +7414,8 @@ snapshots:
 
   '@cfworker/json-schema@4.1.1': {}
 
-  '@cloudflare/workers-types@4.20260702.1': {}
+  '@cloudflare/workers-types@4.20260702.1':
+    optional: true
 
   '@colors/colors@1.6.0': {}
 
@@ -9233,21 +9226,6 @@ snapshots:
       '@tanstack/store': 0.11.2
     transitivePeerDependencies:
       - '@opentelemetry/api'
-      - zod
-
-  '@tanstack/ai-cloudflare@0.3.1(@tanstack/ai@0.70.0(@opentelemetry/api@1.9.1)(zod@4.6.7))(undici@8.12.3)(ws@8.22.0)(zod@4.6.7)':
-    dependencies:
-      '@cloudflare/workers-types': 4.20260702.1
-      '@tanstack/ai': 0.70.0(@opentelemetry/api@1.9.1)(zod@4.6.7)
-      '@tanstack/ai-utils': 0.5.0
-      '@tanstack/openai-base': 0.15.0(@tanstack/ai@0.70.0(@opentelemetry/api@1.9.1)(zod@4.6.7))(undici@8.12.3)(ws@8.22.0)(zod@4.6.7)
-      openai: 7.32.0(undici@8.12.3)(ws@8.22.0)(zod@4.6.7)
-    transitivePeerDependencies:
-      - '@aws-sdk/credential-provider-node'
-      - '@smithy/hash-node'
-      - '@smithy/signature-v4'
-      - undici
-      - ws
       - zod
 
   '@tanstack/ai-event-client@0.13.1':

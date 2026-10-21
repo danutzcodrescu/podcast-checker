@@ -94,7 +94,7 @@ describe('Cloudflare embedding batches', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('forwards cancellation through the Cloudflare custom-fetch bridge', async () => {
+  it('forwards cancellation to the Cloudflare request', async () => {
     const controller = new AbortController()
     fetchMock.mockImplementationOnce(
       (_url, init) =>

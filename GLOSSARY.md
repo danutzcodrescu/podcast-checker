@@ -24,3 +24,9 @@ A listener's ordered set of matching episodes captured for stable search paginat
 
 **Reranking**:
 Reordering retrieved episodes using model-assessed relevance to the listener's search, without changing which episodes matched.
+
+**Episode embedding**:
+A representation of an episode's descriptive text used to find relevant episodes even when their wording differs from a listener's search.
+
+**Query embedding**:
+A representation of a listener's search text used for comparison with episode embeddings.
