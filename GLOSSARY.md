@@ -1,6 +1,6 @@
 # Podcast Library
 
-A listener's followed podcasts and their personal categories.
+A listener's followed podcasts, their personal categories, and episode discovery.
 
 ## Language
 
@@ -15,3 +15,12 @@ A suggested category derived from a podcast's descriptive metadata, or no sugges
 
 **Categorisation**:
 The assignment of listener-owned categories to a follow. Automatic categorisation applies a classification to a newly added, uncategorised follow; manual category choices take precedence.
+
+**Episode**:
+An individual release from a podcast, described by its title, publication details, and content metadata.
+
+**Search snapshot**:
+A listener's ordered set of matching episodes captured for stable search pagination. Membership and order are fixed for its lifetime; episode content and the listener's access can still change.
+
+**Reranking**:
+Reordering retrieved episodes using model-assessed relevance to the listener's search, without changing which episodes matched.

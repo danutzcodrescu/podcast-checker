@@ -275,6 +275,10 @@ npm run build
   The normal test run skips this suite unless `PODCAST_TEST_CONTAINERS=true` or
   `PODCAST_TEST_DATABASE_URL` is set. The latter supports an existing dedicated
   test database without starting a container.
+- `pnpm test:search` runs episode-search integration tests in a separate
+  Testcontainers pgvector database, with the same Docker and opt-in rules.
+  Snapshot persistence, retrieval, and reranking policy run unchanged; tests
+  control query embeddings and the external scoring adapter, not fallback policy.
 - `pnpm exec playwright install chromium webkit` installs the browsers for end-to-end tests.
 - `pnpm test:e2e` runs the Playwright starter suite and starts the app automatically.
 - `pnpm test:e2e:ui` opens Playwright’s interactive test runner.
@@ -471,6 +475,14 @@ retry that restarts pagination. Every page rechecks current follow access. Expir
 snapshots are deleted when a new search snapshot is created, and user deletion
 cascades to its snapshots. Only hashed search fingerprints, IDs and ranking
 diagnostics are stored, not raw query text or document content.
+
+`src/lib/episode-query.ts` retains the search interface and response serialization.
+`src/lib/episode-search-snapshot.server.ts` owns fingerprinting, reuse, expiry,
+creation, ranking-tail assembly, and snapshot-position pagination. SQL matching,
+filtered follow access, candidate loading, and authorized hydration live in
+`src/lib/episode-retrieval.server.ts`. Reranking policy and its provider adapter
+remain separate. Fingerprints and stored snapshots are unchanged; no new migration
+is needed for this refactor.
 
 For comparison, the `episode-search-jev` worktree uses the same retrieval, document
 limits and pagination, with a Jev Decisions adapter instead. See that worktree's

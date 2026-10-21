@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { podcastIdInput } from '#/lib/podcast-library-input'
 
 export const episodeSearchExpired = 'Episode search expired'
+export const episodePageSize = 25
 
 export const episodesInput = z.object({
   podcastId: podcastIdInput.nullable(),
@@ -15,5 +16,6 @@ export const episodesInput = z.object({
   searchSessionId: z.uuid().optional(),
 })
 
-export type EpisodeFilters = Omit<z.infer<typeof episodesInput>, 'offset' | 'searchSessionId'>
+export type EpisodeSearchInput = z.infer<typeof episodesInput>
+export type EpisodeFilters = Omit<EpisodeSearchInput, 'offset' | 'searchSessionId'>
 export type EpisodeSearchMode = EpisodeFilters['searchMode']
