@@ -1,5 +1,5 @@
 [build]
-command = "pnpm build:netlify"
+command = "pnpm build"
 publish = "dist/client"
 
 [build.environment]

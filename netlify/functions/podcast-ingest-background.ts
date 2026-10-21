@@ -1,6 +1,6 @@
 import type { Context } from '@netlify/functions'
 
-import { authorizedIngestionRequest } from '../../src/lib/netlify-ingestion'
+import { authorizedIngestionRequest, localIngestionContext } from '../../src/lib/netlify-ingestion'
 import { getLogger } from '../../src/lib/logger'
 import { withRequestLogging } from '../../src/lib/request-logging'
 
@@ -10,7 +10,10 @@ export default (request: Request, context: Context) =>
     async () => {
       // Preview deploys must not run jobs against the production database.
       // Background responses are discarded by Netlify (the caller receives 202).
-      if (context.deploy.context !== 'production' || !context.deploy.published) {
+      if (
+        !localIngestionContext() &&
+        (context.deploy.context !== 'production' || !context.deploy.published)
+      ) {
         getLogger().info(
           { event: 'ingestion.skipped', reason: 'inactive_deploy' },
           'Background ingestion skipped',

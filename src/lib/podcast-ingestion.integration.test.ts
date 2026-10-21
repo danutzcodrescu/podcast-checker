@@ -3,7 +3,6 @@ import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { eq, inArray, sql } from 'drizzle-orm'
 import { migrate } from 'drizzle-orm/node-postgres/migrator'
-import { PgBoss } from 'pg-boss'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { user } from '../db/auth-schema'
@@ -230,28 +229,6 @@ describe.runIf(!!testUrl)('durable incremental ingestion', () => {
     await ingestion.processEpisodeEmbeddings(await pending(saved.id))
     expect(mocks.fetch).toHaveBeenCalledTimes(3)
     expect(mocks.embed).not.toHaveBeenCalled()
-  })
-
-  it('deduplicates queued work and retries failed jobs durably with pg-boss', async () => {
-    const schema = `test_${randomUUID().replaceAll('-', '')}`
-    const boss = new PgBoss({ connectionString: testUrl!, schema })
-    boss.on('error', () => {})
-    try {
-      await boss.start()
-      await boss.createQueue('sync', { policy: 'exclusive', retryLimit: 2 })
-      const id = await boss.send('sync', { feedId: 'one' }, { singletonKey: 'one' })
-      expect(await boss.send('sync', { feedId: 'one' }, { singletonKey: 'one' })).toBeNull()
-      const [job] = await boss.fetch('sync')
-      expect(job.id).toBe(id)
-      await boss.fail('sync', job, { message: 'transient' })
-      const [retry] = await boss.fetch('sync')
-      expect(retry.retryCount).toBe(1)
-      await boss.complete('sync', retry)
-    } finally {
-      await boss.stop()
-      // schema is generated locally above, never from external input.
-      await db.$client.query(`DROP SCHEMA "${schema}" CASCADE`)
-    }
   })
 
   it('leases one serverless run atomically, recovers expiry, and guards release by token', async () => {

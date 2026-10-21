@@ -17,7 +17,7 @@ PostgreSQL/pgvector database, use `pnpm db:migrate` instead.
 ## Environment variables
 
 Keep local settings in `.env.local` at the workspace root. Database, migration,
-and worker entry points load `.env.local` before `.env`; existing process/shell
+and ingestion entry points load `.env.local` before `.env`; existing process/shell
 variables take precedence over both. Docker Compose has its own rules, described
 below. Never commit real credentials or expose server secrets with a `VITE_`
 prefix. Each worktree needs its own local settings; Git does not copy ignored
@@ -34,6 +34,7 @@ development Compose database defaults. Generate a secret with
 DATABASE_URL=postgresql://podcast_checker:podcast_checker@127.0.0.1:5432/podcast_checker
 BETTER_AUTH_URL=http://localhost:3000
 BETTER_AUTH_SECRET=replace-with-a-generated-secret-of-at-least-32-characters
+INGESTION_SECRET=replace-with-a-separate-generated-secret-of-at-least-32-characters
 
 # Optional: uncomment both for episode embeddings and semantic search
 # CLOUDFLARE_ACCOUNT_ID=your-32-character-hex-account-id
@@ -49,7 +50,6 @@ EPISODE_RERANKING_ENABLED=true
 
 # Optional runtime settings
 LOG_LEVEL=info
-# PODCAST_WORKER_ENABLED=false
 # DATABASE_POOL_MAX=2
 ```
 
@@ -66,8 +66,8 @@ OpenRouter.
 | Variable                       | Required for / default                                         | Notes                                                                                                                                                                                                           |
 | ------------------------------ | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL`                 | Application, workers, and database-backed features; no default | PostgreSQL connection string. Use the host/port published by Docker locally and the pooled Neon URL for deployed functions. Setting only `DIRECT_DATABASE_URL` does not configure the app's runtime connection. |
-| `DIRECT_DATABASE_URL`          | Optional; migrations fall back to `DATABASE_URL`               | Preferred connection for `pnpm db:migrate`, Drizzle administration, and production startup migrations. Use a direct, non-pooled Neon URL and preserve its TLS parameters.                                       |
-| `DATABASE_POOL_MAX`            | Optional; `2`                                                  | Web/application pool size, integer from `1` to `20`. The Node pg-boss worker also has its own pool.                                                                                                             |
+| `DIRECT_DATABASE_URL`          | Optional; migrations fall back to `DATABASE_URL`               | Preferred connection for `pnpm db:migrate` and Drizzle administration. Use a direct, non-pooled Neon URL and preserve its TLS parameters.                                                                       |
+| `DATABASE_POOL_MAX`            | Optional; `2`                                                  | Per-process pool size, integer from `1` to `20`.                                                                                                                                                                |
 | `BETTER_AUTH_URL`              | Authentication; set explicitly for each environment            | Canonical origin, such as `http://localhost:3000` locally or your public HTTPS domain in production. Match the actual host and port.                                                                            |
 | `BETTER_AUTH_SECRET`           | Required in production and for Pocket Casts token encryption   | Stable random secret of at least 32 characters. Keep it across restarts and deployments; changing it requires reconnecting Pocket Casts.                                                                        |
 | `CLOUDFLARE_ACCOUNT_ID`        | Embeddings and semantic search                                 | Exactly 32 hexadecimal characters. Use together with `CLOUDFLARE_API_TOKEN`.                                                                                                                                    |
@@ -107,64 +107,56 @@ charges; the NVIDIA free variant is subject to provider availability and quotas.
 
 ### Ingestion and server settings
 
-| Variable                        | Default / scope                                            | Notes                                                                                                                                                                                                                                                                    |
-| ------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `PODCAST_WORKER_ENABLED`        | Automatic worker enabled in Node/Nitro                     | The literal string `false` disables the automatic worker thread. It does not disable `pnpm ingest:once` or Netlify scheduled/background functions. Compose explicitly sets this to `true`; change its `environment` entry or use a Compose override to disable it there. |
-| `PODCAST_REFRESH_MINUTES`       | `60`; Node worker and bounded ingestion runner             | Refresh interval, integer from `1` to `10080`.                                                                                                                                                                                                                           |
-| `PODCAST_FEED_CONCURRENCY`      | `1`; Node worker only                                      | Parallel feed-sync jobs, integer from `1` to `8`. Not used by Netlify's bounded runner.                                                                                                                                                                                  |
-| `PODCAST_EMBEDDING_CONCURRENCY` | `1`; Node worker only                                      | Parallel embedding batches, integer from `1` to `8`. Not used by Netlify's bounded runner.                                                                                                                                                                               |
-| `PODCAST_EMBEDDING_BATCH_SIZE`  | `16`; Node worker and bounded ingestion runner             | Inputs per batch, integer from `1` to `32`.                                                                                                                                                                                                                              |
-| `LOG_LEVEL`                     | `info`                                                     | `trace`, `debug`, `info`, `warn`, `error`, `fatal`, or `silent`. Applies to web, worker, and function logs.                                                                                                                                                              |
-| `HOST`, `PORT`                  | Deployment-specific                                        | Node server listening address and port. Compose sets `0.0.0.0` and `3000`. Local `pnpm dev` uses Vite's `--port 3000`; use a CLI port override for another worktree.                                                                                                     |
-| `SERVER_SHUTDOWN_TIMEOUT`       | `85` seconds in Docker or when the automatic worker starts | Node server shutdown budget. Leave enough time for the worker's graceful stop; changing it is normally unnecessary.                                                                                                                                                      |
+| Variable                       | Default | Notes                                                            |
+| ------------------------------ | ------- | ---------------------------------------------------------------- |
+| `PODCAST_REFRESH_MINUTES`      | `60`    | Refresh interval, integer from `1` to `10080`.                   |
+| `PODCAST_EMBEDDING_BATCH_SIZE` | `16`    | Inputs per batch, integer from `1` to `32`.                      |
+| `LOG_LEVEL`                    | `info`  | `trace`, `debug`, `info`, `warn`, `error`, `fatal`, or `silent`. |
+
+Local development uses Vite on port 3000 with Netlify platform emulation.
 
 ### Docker Compose settings
 
 These variables configure Compose interpolation, not AI providers:
 
-| Variable            | Default           | Notes                                                                                      |
-| ------------------- | ----------------- | ------------------------------------------------------------------------------------------ |
-| `POSTGRES_USER`     | `podcast_checker` | Database username; used to construct the app container's `DATABASE_URL`.                   |
-| `POSTGRES_DB`       | `podcast_checker` | Database name.                                                                             |
-| `POSTGRES_PASSWORD` | `podcast_checker` | Local development default only; choose a strong production password.                       |
-| `POSTGRES_PORT`     | `5432`            | PostgreSQL port published on the host. Match it in a host-run app's `DATABASE_URL`.        |
-| `APP_PORT`          | `3000`            | App port published on the host; the app still listens on port `3000` inside the container. |
+| Variable            | Default           | Notes                                                                               |
+| ------------------- | ----------------- | ----------------------------------------------------------------------------------- |
+| `POSTGRES_USER`     | `podcast_checker` | Local database username; match it in `DATABASE_URL`.                                |
+| `POSTGRES_DB`       | `podcast_checker` | Database name.                                                                      |
+| `POSTGRES_PASSWORD` | `podcast_checker` | Local development default only; choose a strong production password.                |
+| `POSTGRES_PORT`     | `5432`            | PostgreSQL port published on the host. Match it in a host-run app's `DATABASE_URL`. |
 
 Compose interpolation reads the shell and `.env` by default, not `.env.local`.
 Use `.env` or explicitly pass `docker compose --env-file .env.local ...` if changing
-`POSTGRES_*` or `APP_PORT` locally. The app container's `env_file` list loads `.env`
-then `.env.local`, with the latter winning, but explicit Compose `environment`
-entries take precedence: `DATABASE_URL`, `HOST`, `PORT`, and
-`PODCAST_WORKER_ENABLED` are set there. Changing `POSTGRES_*` does not rename users
+`POSTGRES_*` locally. Compose runs only the local database.
+Changing `POSTGRES_*` does not rename users
 or databases in an already-initialized PostgreSQL volume.
 
 ### Netlify, build, and test settings
 
-- `INGESTION_SECRET`: required for deployed Netlify ingestion; generate a separate
-  random secret of at least 32 characters. It is not needed by the Node worker.
+- `INGESTION_SECRET`: required for deployed and locally emulated Netlify ingestion;
+  generate a separate random secret of at least 32 characters.
 - `URL`: supplied by Netlify and required as an HTTPS destination for scheduled
   ingestion dispatch. It is not a replacement for `BETTER_AUTH_URL`.
-- `DEPLOY_TARGET`: set to `netlify` to select the Netlify build adapter.
-  `pnpm build:netlify` and `pnpm dev:netlify` set it; Netlify also supplies
-  `NETLIFY` with the value `true` automatically.
+- Netlify is the only deployment adapter. `pnpm build:netlify` and
+  `pnpm dev:netlify` are aliases for `pnpm build` and `pnpm dev`.
 - `NODE_ENV` and Netlify's `CONTEXT` are normally platform-managed; `CONTEXT` is
   used as a log environment label. Netlify's `NODE_VERSION` is set to `24` in
   `netlify.toml`.
 - `PODCAST_TEST_DATABASE_URL`: dedicated disposable PostgreSQL/pgvector database
   for integration tests. Those suites are skipped when unset; they apply migrations
   and modify test data, so never point it at production. Playwright uses the app's
-  `DATABASE_URL` instead and supplies its own test auth URL/secret, server port, and
-  `PODCAST_WORKER_ENABLED=false`. Enable the signup database flag for that test app.
+  `DATABASE_URL` instead and supplies its own test auth URL/secret and server port.
+  It runs the Netlify-emulated Vite server. Enable the signup database flag for that test app.
 - `CI`: normally supplied by CI; enables Playwright's CI reporting/retry settings.
 
 On Netlify, configure runtime secrets in the **Functions** scope and set
 `DIRECT_DATABASE_URL` only on the external migration job when possible. Set
 `PODCAST_REFRESH_MINUTES`, `PODCAST_EMBEDDING_BATCH_SIZE`, and `LOG_LEVEL` there too
-if overriding defaults. Do not run the Node worker and serverless ingestion against
-the same database simultaneously.
+if overriding defaults.
 
-After changing settings, restart the development server/worker, recreate the app
-container, or redeploy Netlify as appropriate. Apply migrations before using new
+After changing settings, restart the development server or redeploy Netlify
+as appropriate. Apply migrations before using new
 database-backed features, including episode search snapshots.
 
 ## Automatic podcast categories
@@ -214,7 +206,7 @@ Run `pnpm lint:staged` to run the same checks manually on staged files.
 
 ## Server logging
 
-The web server, Netlify functions, and ingestion worker use **Pino** to write
+The web server, Netlify functions, and ingestion CLI use **Pino** to write
 newline-delimited JSON to stdout. Netlify captures function logs automatically;
 Docker logs are available with `docker compose logs -f app`. No external logging
 service or worker-thread transport is required; writes are synchronous so logs
@@ -423,9 +415,9 @@ Cloudflare error codes before the adapter's lifecycle can report an error. These
 compatibility checks remain app-owned because the generic Cloudflare adapter sends
 `text` inputs and does not forward cancellation yet. The embedding model and input
 preprocessing are unchanged; existing stored vectors do not need rebuilding.
-The ingestion CLI and development worker use `tsconfig.scripts.json` to avoid
+The ingestion CLI uses `tsconfig.scripts.json` to avoid
 tsx resolving an incomplete TypeScript source in TanStack AI's `fast-json-patch`
-dependency; production still uses the compiled worker.
+dependency. Netlify bundles the production functions.
 
 #### Episode relevance reranking
 
@@ -478,27 +470,22 @@ Check the ranking banner rather than assuming a successful search used AI rankin
 
 Following a podcast with an RSS URL atomically creates or links a shared feed
 record. The record is a durable outbox: the web request does not fetch RSS, parse
-XML, or call the embedding API. A Nitro startup plugin starts a **Node worker
-thread inside the app container**, keeping RSS parsing off the web server's event
-loop. The thread dispatches outbox records every five seconds into PostgreSQL-backed
-**pg-boss** queues. A persistent
-once-a-minute dispatch schedule provides a backstop. Due feeds refresh hourly
+XML, or call the embedding API. A Netlify scheduled function dispatches a bounded
+background ingestion run every five minutes. Due feeds refresh hourly
 by default, with conditional HTTP requests when supported.
 
 ### Run locally
 
 Use **`docker-compose.dev.yml`** for PostgreSQL only, and run the app on your host
 with `pnpm dev`. This file reuses the PostgreSQL service from `docker-compose.yml`
-and the existing `postgres18_data` volume without including the app build service.
+and the existing `postgres18_data` volume.
 `pnpm db:setup` selects this development Compose file automatically.
 
 The PostgreSQL service now uses **`pgvector/pgvector:pg18`**. It keeps the existing
 `postgres18_data` volume at `/var/lib/postgresql`. Migration
 `drizzle/0002_podcast_ingestion.sql` enables the `vector` extension, creates feed,
 episode, and embedding tables, and queues feeds already in users' libraries.
-pg-boss manages its own `pgboss` schema when the worker starts; it needs no extra
-PostgreSQL extension. The database role must be able to create that schema, and
-the migration role must be able to enable `vector`.
+The migration role must be able to enable `vector`.
 
 1. Add your Cloudflare Workers AI credentials to `.env.local`:
 
@@ -510,7 +497,7 @@ the migration role must be able to enable `vector`.
    In the Cloudflare dashboard, open **Workers AI → Use REST API** to copy the
    account ID and create a Workers AI API token. The token needs **Workers AI
    Read** and **Workers AI Edit** access to that account. Credentials stay on the
-   server; the app calls Cloudflare's REST API directly from your machine or VPS.
+   server; the app calls Cloudflare's REST API from local or deployed functions.
 
 2. Upgrade/start PostgreSQL and apply migrations:
 
@@ -518,87 +505,18 @@ the migration role must be able to enable `vector`.
    pnpm db:setup
    ```
 
-3. Run the app; it automatically starts the worker thread:
+3. Run the app with Netlify platform emulation:
 
    ```bash
    pnpm dev
    ```
 
-### Deploy to a VPS with Docker Compose
-
-The default **`docker-compose.yml`** runs two services: **`app`** (TanStack Start/Nitro plus the worker thread)
-and **`postgres`** (PostgreSQL 18 plus pgvector). There is no separate worker
-container. The multi-stage Dockerfile bundles all three Node entry points—web
-server, worker, and migrations—into `.output`; the runtime image contains only
-the built output and migrations, without source code or development dependencies.
-
-Configure `.env` on the VPS, for example:
-
-```dotenv
-POSTGRES_USER=podcast_checker
-POSTGRES_DB=podcast_checker
-POSTGRES_PASSWORD=replace-with-your-database-password
-BETTER_AUTH_SECRET=replace-with-a-long-random-secret
-BETTER_AUTH_URL=https://podcasts.example.com
-CLOUDFLARE_ACCOUNT_ID=your-32-character-account-id
-CLOUDFLARE_API_TOKEN=your-workers-ai-api-token
-OPENROUTER_API_KEY=your-openrouter-api-key
-EPISODE_RERANKING_ENABLED=true
-LOG_LEVEL=info
-APP_PORT=3000
-```
-
-Omit the Cloudflare entries for RSS-only ingestion, or the OpenRouter entry if you
-do not want automatic categorisation or AI reranking. Model overrides and worker
-tuning are listed in [Environment variables](#environment-variables).
-
-Then deploy:
-
-```bash
-docker compose up -d --build
-docker compose logs -f app
-```
-
-Compose passes `.env` then `.env.local` into the app container, with the latter
-winning except for explicit `environment` entries, and connects the app to
-`postgres:5432`. Compose substitution of `POSTGRES_*` and `APP_PORT` uses `.env`
-or the shell by default. The app runs
-migrations before starting the web server and worker, including on an existing
-database volume. Startup fails if migrations fail. Its HTTP port is bound to
-`127.0.0.1:3000` on the VPS; point your host reverse proxy (Caddy/nginx) there for
-HTTPS, and set `BETTER_AUTH_URL` to the public URL. A containerized reverse proxy
-on the same Compose network can use `app:3000` instead.
-
-The supervisor restarts a crashed worker thread with capped exponential backoff.
-On shutdown, Nitro requests a graceful worker stop and waits up to 75 seconds;
-unfinished jobs remain recoverable through pg-boss. The server's shutdown budget
-is 85 seconds and Compose allows 90 seconds. Node 24 is used in Docker; local
-execution requires Node 22.19 or newer. Without valid Cloudflare credentials,
-episode metadata still imports and the embedding queue consumer is paused;
-pending episodes are retained. Recreate the app container after
-changing its environment.
-
-For a local production run, execute `pnpm build && pnpm start` from the project
-root. This also applies migrations before starting the server. Development uses
-a thread-local TypeScript loader; production executes the bundled JavaScript
-worker directly. Set `PODCAST_WORKER_ENABLED=false` to disable automatic ingestion
-for tests or local debugging (the Playwright server does this). Compose enables
-the worker explicitly.
-
 ### Deploy to Netlify with Neon
 
-There are two deployment targets; routes, server functions, authentication, and
-database schema are shared:
-
-| Target                  | Build                | Runtime / ingestion                                                          |
-| ----------------------- | -------------------- | ---------------------------------------------------------------------------- |
-| Node / Docker (default) | `pnpm build`         | Nitro server with the existing pg-boss worker thread                         |
-| Netlify                 | `pnpm build:netlify` | Official Netlify TanStack Start adapter, with scheduled/background functions |
-
-The Netlify build does **not** include Nitro's worker startup plugin, bundled
-worker entry, or startup migrations. `netlify.toml` configures the build command,
+`pnpm build` uses the official Netlify TanStack Start adapter.
+`netlify.toml` configures the build command,
 `dist/client` publish directory, Node 24, and a five-minute ingestion schedule.
-Netlify builds also select the adapter automatically through `NETLIFY=true`.
+Apply database migrations explicitly before deployment.
 
 #### 1. Keep local PostgreSQL; create Neon for production
 
@@ -706,32 +624,33 @@ initial 202 does not prove processing succeeded.
 - Each run attempts at most **five feeds** and **20 embedding batches** (16 inputs
   per batch by default). It stops starting work after an **eight-minute** budget,
   propagates cancellation to ingestion, and leaves ample time below Netlify's
-  15-minute hard limit. The normal local worker concurrency settings do not apply.
+  15-minute hard limit.
 - The durable feed/embedding outbox remains the source of truth. Work left by a
   bounded run is picked up on the next scheduled run. Failed work retains its
   existing retry date/error; a provider failure stops further batches in that run.
 - Successful runs release the lease. A terminated run recovers after the
-  **20-minute** lease expires. As with the Node worker, delivery is at least once:
+  **20-minute** lease expires. Delivery is at least once:
   an API call interrupted before its result is committed can be repeated.
 - Completed embeddings are skipped. Without Cloudflare credentials, RSS imports
-  continue and embeddings remain pending. The serverless path does not start
-  pg-boss or create a `pgboss` schema.
-- Do not run the Node worker and serverless ingestion against the same database
-  at the same time; the Node queue worker does not participate in this lease.
+  continue and embeddings remain pending.
 
-To exercise the same bounded runner against local Docker Postgres, disable the
-automatic worker and run ingestion explicitly in a second terminal:
+#### Local Netlify emulation
+
+`pnpm dev` uses the official adapter's platform emulation, including the functions
+in `netlify/functions`. Set `BETTER_AUTH_URL=http://localhost:3000` and a separate
+`INGESTION_SECRET` in `.env.local`. Use Node 24 to match production.
+Scheduled jobs do not tick automatically locally. Trigger the dispatcher while
+the dev server is running:
 
 ```bash
-PODCAST_WORKER_ENABLED=false pnpm dev
-# In a second terminal (uses .env.local):
-pnpm ingest:once
+curl -X POST http://localhost:3000/.netlify/functions/podcast-dispatch
 ```
 
-`pnpm dev:netlify` optionally uses the official adapter's local platform emulation
-instead of Nitro. Scheduled jobs do not tick automatically in local dev, and the
-deployed function entry points require a published production context; use
-`pnpm ingest:once` for local ingestion testing.
+The emulator's `dev` context allows ingestion; the dispatcher sends an authenticated
+request to the background function on the loopback `BETTER_AUTH_URL`. Published
+production deploys use Netlify's HTTPS `URL`; preview deploys still skip ingestion.
+Check terminal logs for completion after the background function accepts the request.
+For a direct runner invocation without HTTP emulation, use `pnpm ingest:once`.
 
 Netlify compute, requests, deploys, and bandwidth share its monthly credit
 allowance; Cloudflare inference and Neon usage have separate quotas. A large
@@ -760,16 +679,11 @@ cron interval in `netlify.toml` if you prefer lower polling cost to import laten
   `@cf/qwen/qwen3-embedding-0.6b` (1,024 dimensions). Inputs are conservatively bounded
   to 7,500 UTF-8 bytes; full cleaned text is stored separately. The exact input,
   hash, model, preprocessing version, and timestamp are persisted.
-- Feed sync and embedding queues deduplicate queued/active work per feed or
-  episode. Defaults are **one feed sync and one embedding batch at a time**.
-  Transactions import at most 50 episodes, and an embedding batch holds at most
-  16 inputs. Every worker polls at bounded intervals rather than spawning a
-  task per followed podcast.
-- Jobs retry five times with exponential backoff. Failed feed syncs and failed
-  embeddings are also eligible for later dispatch. pg-boss heartbeats and job
-  expiration recover work after worker crashes. Completed embeddings are skipped
-  on redelivery; an interrupted API request may still incur a repeated provider
-  call before its result is committed, as with any at-least-once job system.
+- The database lease admits one bounded ingestion run at a time. Transactions
+  import at most 50 episodes, and an embedding batch holds at most 16 inputs.
+- Failed feeds and embeddings retain retry state for later scheduled runs.
+  Completed embeddings are skipped on redelivery; an interrupted API request may
+  still incur a repeated provider call before its result is committed.
 - The library shows import/embedding progress and the last successful feed
   refresh. **Retry episode import** requests another attempt for a failed show.
 - Provider errors retain Cloudflare's numeric error code without raw response
@@ -778,17 +692,14 @@ cron interval in `netlify.toml` if you prefer lower polling cost to import laten
 - Public HTTP(S) feed fetching validates redirect destinations and resolved IPs
   at connection time, applies time/size limits, and rejects XML document entities.
 
-Configuration (per app container / worker thread):
+Ingestion configuration:
 
-| Variable                        | Default | Allowed values |
-| ------------------------------- | ------- | -------------- |
-| `PODCAST_REFRESH_MINUTES`       | `60`    | 1–10080        |
-| `PODCAST_FEED_CONCURRENCY`      | `1`     | 1–8            |
-| `PODCAST_EMBEDDING_CONCURRENCY` | `1`     | 1–8            |
-| `PODCAST_EMBEDDING_BATCH_SIZE`  | `16`    | 1–32           |
+| Variable                       | Default | Allowed values |
+| ------------------------------ | ------- | -------------- |
+| `PODCAST_REFRESH_MINUTES`      | `60`    | 1–10080        |
+| `PODCAST_EMBEDDING_BATCH_SIZE` | `16`    | 1–32           |
 
-Increasing app replicas multiplies embedding API concurrency. Feed and
-episode deduplication remains enforced by the database. Model changes or
+Feed and episode deduplication remains enforced by the database. Model changes or
 re-embedding completed episodes require an explicit reindex migration; ordinary
 RSS refreshes never do that automatically. Vector search should use the same
 model and cosine distance; an HNSW index can be added when query volume warrants it.
@@ -807,14 +718,12 @@ and the [model documentation](https://developers.cloudflare.com/workers-ai/model
 Migration **`0003_cloudflare_embeddings.sql`** changes the vector column from 1,536
 to 1,024 dimensions. Existing episode records and embedding input text are kept;
 old vectors are invalidated, model-aware hashes are recomputed, and embeddings
-are reset to pending for this one-time provider change. The worker uses a new
-Cloudflare embedding queue and retires waiting OpenAI jobs, preserving failed
-and completed queue history. Ordinary feed refreshes still skip completed vectors.
+are reset to pending for this one-time provider change.
+Ordinary feed refreshes still skip completed vectors.
 
 For an existing local database, run `pnpm db:migrate` and restart `pnpm dev` after
-configuring the two Cloudflare variables. Docker applies the migration before
-starting the app automatically. The account does not need an OpenAI key or a
-Cloudflare-hosted application; PostgreSQL and the app can remain on your VPS.
+configuring the two Cloudflare variables. Apply production migrations explicitly.
+The account does not need an OpenAI key or a Cloudflare-hosted application.
 
 ### Ingestion tests
 
@@ -827,11 +736,11 @@ docker compose -f docker-compose.dev.yml exec -T postgres createdb -U podcast_ch
 PODCAST_TEST_DATABASE_URL=postgresql://podcast_checker:podcast_checker@localhost:5432/podcast_checker_ingestion_test pnpm exec vitest run src/lib/podcast-ingestion.integration.test.ts
 ```
 
-The integration suite applies migrations, uses real PostgreSQL/pgvector and
-pg-boss, and mocks RSS/embedding providers to avoid API costs. It checks new-only
+The integration suite applies migrations, uses real PostgreSQL/pgvector,
+and mocks RSS/embedding providers to avoid API costs. It checks new-only
 embedding, repeated syncs, retries, stale results, conditional requests, archive
-retention, unfollowing, and durable queue deduplication. It removes its own test
-records and queue schema afterward.
+retention, unfollowing, and ingestion lease recovery. It removes its own test
+records afterward.
 
 ## File naming
 
@@ -867,22 +776,6 @@ If you prefer not to use Tailwind CSS:
 2. Replace the Tailwind import in `src/styles.css` with your own styles
 3. Remove `tailwindcss()` from the plugins array in `vite.config.ts`
 4. Remove `@tailwindcss/vite` and `tailwindcss` from `package.json`
-
-## Deploy with Nitro
-
-This project uses Nitro as a generic server adapter, so it can run on any Node-compatible host.
-
-```bash
-pnpm build
-pnpm start
-```
-
-For the VPS deployment, use the Docker Compose instructions above. A manual Node
-deployment needs `.output/` and `drizzle/` in the working directory, with database
-and API credentials supplied through the environment. The server starts its
-background worker thread automatically.
-
-For host-specific presets (Vercel, Netlify, Cloudflare, AWS Lambda, etc.) and tuning, see https://v3.nitro.build/deploy.
 
 # TanStack Chat Application
 

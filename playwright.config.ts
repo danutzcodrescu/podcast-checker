@@ -19,15 +19,12 @@ export default defineConfig({
     { name: 'mobile-safari', use: { ...devices['iPhone 13'] } },
   ],
   webServer: {
-    command: 'pnpm exec vite build --logLevel error && node .output/server/index.mjs',
+    command: 'pnpm exec vite dev --host 127.0.0.1 --port 4317 --strictPort',
     url: `${baseURL}/signin`,
     reuseExistingServer: false,
     env: {
-      HOST: '127.0.0.1',
-      PORT: '4317',
       BETTER_AUTH_URL: baseURL,
       BETTER_AUTH_SECRET: 'playwright-test-secret-for-local-tests-only-123456789',
-      PODCAST_WORKER_ENABLED: 'false',
     },
   },
 })

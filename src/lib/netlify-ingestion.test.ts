@@ -21,6 +21,7 @@ const request = (token = secret, method = 'POST') =>
 
 let entries: any[]
 beforeEach(() => {
+  vi.stubEnv('CONTEXT', 'production')
   vi.stubEnv('LOG_LEVEL', 'info')
   entries = []
   const captured = createLogger({
@@ -74,6 +75,34 @@ describe('Netlify ingestion', () => {
     await dispatch(request(), context('deploy-preview'))
     await dispatch(request(), context('production', false))
     expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('dispatches locally to the emulator rather than the production site', async () => {
+    vi.stubEnv('CONTEXT', 'dev')
+    vi.stubEnv('INGESTION_SECRET', secret)
+    vi.stubEnv('URL', 'https://podcasts.example.com')
+    vi.stubEnv('BETTER_AUTH_URL', 'http://localhost:3000')
+    const fetch = vi.fn().mockResolvedValue(new Response(null, { status: 202 }))
+    vi.stubGlobal('fetch', fetch)
+    await dispatch(request(), context('', false))
+    expect(fetch).toHaveBeenCalledWith(
+      new URL('http://localhost:3000/.netlify/functions/podcast-ingest-background'),
+      expect.objectContaining({ method: 'POST' }),
+    )
+    vi.stubEnv('BETTER_AUTH_URL', 'https://podcasts.example.com')
+    await expect(dispatch(request(), context('', false))).rejects.toThrow('loopback')
+    expect(fetch).toHaveBeenCalledOnce()
+  })
+
+  it('allows authenticated local background jobs but still rejects invalid credentials', async () => {
+    vi.stubEnv('CONTEXT', 'dev')
+    vi.stubEnv('INGESTION_SECRET', secret)
+    await background(request('wrong'), context('', false))
+    await background(request(secret, 'GET'), context('', false))
+    expect(mocks.run).not.toHaveBeenCalled()
+    mocks.run.mockResolvedValueOnce({ feeds: 1 })
+    await background(request(), context('', false))
+    expect(mocks.run).toHaveBeenCalledOnce()
   })
 
   it('only runs background jobs for authenticated POSTs on the published production deploy', async () => {

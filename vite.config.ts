@@ -1,5 +1,4 @@
 import { defineConfig } from 'vite'
-import { resolve } from 'node:path'
 import { devtools } from '@tanstack/devtools-vite'
 import { paraglideVitePlugin } from '@inlang/paraglide-js'
 
@@ -8,10 +7,7 @@ import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import viteReact, { reactCompilerPreset } from '@vitejs/plugin-react'
 import babel from '@rolldown/plugin-babel'
 import tailwindcss from '@tailwindcss/vite'
-import { nitro } from 'nitro/vite'
 import netlify from '@netlify/vite-plugin-tanstack-start'
-
-const netlifyTarget = process.env.DEPLOY_TARGET === 'netlify' || process.env.NETLIFY === 'true'
 
 const config = defineConfig({
   resolve: { tsconfigPaths: true },
@@ -22,27 +18,9 @@ const config = defineConfig({
       outdir: './src/paraglide',
       strategy: ['url', 'baseLocale'],
     }),
-    !netlifyTarget &&
-      nitro({
-        preset: 'node-server',
-        plugins: ['./src/plugins/podcast-worker.ts'],
-        rollupConfig: { external: [/^@sentry\//] },
-        hooks: {
-          'rollup:before'(instance, bundle) {
-            if (instance.options.dev) return
-            // Additional Node entries share Nitro's dependency tracing and output.
-            bundle.input = {
-              index: instance.options.entry,
-              'podcast-worker': resolve('scripts/podcast-worker.ts'),
-              migrate: resolve('scripts/migrate.ts'),
-            }
-            bundle.output = { ...bundle.output, entryFileNames: '[name].mjs' }
-          },
-        },
-      }),
     tailwindcss(),
     tanstackStart(),
-    netlifyTarget && netlify(),
+    netlify({ dev: { edgeFunctions: { enabled: false } } }),
     viteReact(),
     babel({ presets: [reactCompilerPreset()] }),
   ],
