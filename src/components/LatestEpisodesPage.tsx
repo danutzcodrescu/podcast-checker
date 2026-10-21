@@ -16,6 +16,7 @@ import { usePocketCasts } from '#/hooks/use-pocket-casts'
 import type { PocketCastsIntegration } from '#/hooks/use-pocket-casts'
 import { getLatestEpisodes } from '#/lib/latest-episodes'
 import type { EpisodeFilters, LatestEpisode } from '#/lib/latest-episodes'
+import { episodeSearchExpired } from '#/lib/episode-search-input'
 import { m } from '#/paraglide/messages'
 import { getLocale } from '#/paraglide/runtime'
 
@@ -180,9 +181,15 @@ export function LatestEpisodesPage({ email }: { email: string }) {
       filters,
       library.podcasts.map(({ podcast, categoryIds }) => [podcast.id, categoryIds]),
     ],
-    queryFn: ({ pageParam }) => getLatestEpisodes({ data: { ...filters, offset: pageParam } }),
-    initialPageParam: 0,
-    getNextPageParam: (page) => page.nextOffset,
+    queryFn: ({ pageParam }) => getLatestEpisodes({ data: { ...filters, ...pageParam } }),
+    initialPageParam: { offset: 0, searchSessionId: undefined as string | undefined },
+    getNextPageParam: (page) =>
+      page.nextOffset === null
+        ? undefined
+        : {
+            offset: page.nextOffset,
+            searchSessionId: page.searchSessionId ?? undefined,
+          },
     enabled: !library.disabled,
     retry: false,
     refetchInterval: filters.term ? false : 30_000,
@@ -370,19 +377,34 @@ export function LatestEpisodesPage({ email }: { email: string }) {
               {m.episodes_semantic_unavailable()}
             </output>
           )}
+          {filters.term && filters.sort === 'relevance' && episodes.data?.pages[0].ranking && (
+            <output className="mb-4 block rounded-lg bg-accent p-3 text-sm">
+              {episodes.data.pages[0].ranking.status === 'applied'
+                ? m.episodes_ranking_applied({ model: episodes.data.pages[0].ranking.model })
+                : episodes.data.pages[0].ranking.status === 'fallback'
+                  ? m.episodes_ranking_fallback()
+                  : m.episodes_ranking_baseline()}
+            </output>
+          )}
           {episodes.isError && (
             <div className="mb-4 rounded-lg bg-destructive-soft p-4" role="alert">
               <p className="text-destructive">
-                {filters.term && filters.searchMode === 'semantic'
-                  ? m.episodes_semantic_error()
-                  : m.episodes_error()}
+                {episodes.error?.message === episodeSearchExpired
+                  ? m.episodes_search_expired()
+                  : filters.term && filters.searchMode === 'semantic'
+                    ? m.episodes_semantic_error()
+                    : m.episodes_error()}
               </p>
               <Button
                 variant="ghost"
                 size="sm"
                 className="mt-2 px-0 text-link"
                 onClick={() => {
-                  if (episodes.isFetchNextPageError) void episodes.fetchNextPage()
+                  if (
+                    episodes.isFetchNextPageError &&
+                    episodes.error?.message !== episodeSearchExpired
+                  )
+                    void episodes.fetchNextPage()
                   else void episodes.refetch()
                 }}
               >

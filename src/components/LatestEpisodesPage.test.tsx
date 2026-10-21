@@ -303,6 +303,63 @@ describe('latest episodes page', () => {
     ).toBeInTheDocument()
   })
 
+  it('passes the search snapshot to later pages and identifies the applied ranker', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByRole('heading', { name: 'JavaScript patterns' })
+    mocks.episodes.mockResolvedValueOnce({
+      episodes: [episode],
+      total: 26,
+      nextOffset: 25,
+      searchSessionId: 'snapshot-id',
+      ranking: { status: 'applied', model: 'nvidia/test:free', durationMs: 10 },
+    })
+    await user.type(screen.getByRole('searchbox', { name: 'Search episodes' }), 'patterns{Enter}')
+    expect(await screen.findByText(/Relevance ranked by nvidia\/test:free/)).toBeInTheDocument()
+    mocks.episodes.mockResolvedValueOnce({
+      episodes: [{ ...episode, id: 'next', title: 'Next ranked episode' }],
+      total: 26,
+      nextOffset: null,
+      searchSessionId: 'snapshot-id',
+    })
+    await user.click(screen.getByRole('button', { name: 'Load more episodes' }))
+    await screen.findByRole('heading', { name: 'Next ranked episode' })
+    expect(mocks.episodes).toHaveBeenLastCalledWith({
+      data: expect.objectContaining({ offset: 25, searchSessionId: 'snapshot-id' }),
+    })
+  })
+
+  it('shows fallback explicitly and restarts an expired search instead of retrying its old cursor', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByRole('heading', { name: 'JavaScript patterns' })
+    mocks.episodes.mockResolvedValueOnce({
+      episodes: [episode],
+      total: 26,
+      nextOffset: 25,
+      searchSessionId: 'old-snapshot',
+      ranking: { status: 'fallback', model: 'test-model', durationMs: 10 },
+    })
+    await user.type(screen.getByRole('searchbox', { name: 'Search episodes' }), 'patterns{Enter}')
+    expect(await screen.findByText(/AI ranking is temporarily unavailable/)).toBeInTheDocument()
+    mocks.episodes.mockRejectedValueOnce(new Error('Episode search expired'))
+    await user.click(screen.getByRole('button', { name: 'Load more episodes' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('These search results have expired')
+    mocks.episodes.mockResolvedValueOnce({
+      episodes: [{ ...episode, title: 'Refreshed ranking' }],
+      total: 1,
+      nextOffset: null,
+      searchSessionId: 'fresh-snapshot',
+    })
+    await user.click(within(alert).getByRole('button', { name: 'Try again' }))
+    await screen.findByRole('heading', { name: 'Refreshed ranking' })
+    expect(mocks.episodes).toHaveBeenLastCalledWith({
+      data: expect.objectContaining({ offset: 0, searchSessionId: undefined }),
+    })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
   it('localizes episode metadata, controls, and navigation in French', async () => {
     localeRuntime.overwriteGetLocale(() => 'fr')
     renderPage()

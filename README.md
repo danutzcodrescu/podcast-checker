@@ -2,12 +2,170 @@ Welcome to your new TanStack Start app!
 
 # Getting Started
 
-To run this application:
+Install dependencies, configure `.env.local` using the reference below, then start
+local PostgreSQL and the application:
 
 ```bash
 pnpm install
+pnpm db:setup
 pnpm dev
 ```
+
+`pnpm db:setup` requires Docker and applies migrations. If you already have a
+PostgreSQL/pgvector database, use `pnpm db:migrate` instead.
+
+## Environment variables
+
+Keep local settings in `.env.local` at the workspace root. Database, migration,
+and worker entry points load `.env.local` before `.env`; existing process/shell
+variables take precedence over both. Docker Compose has its own rules, described
+below. Never commit real credentials or expose server secrets with a `VITE_`
+prefix. Each worktree needs its own local settings; Git does not copy ignored
+environment files.
+
+### Local configuration example
+
+Create `.env.local` without overwriting an existing file. This example uses the
+development Compose database defaults. Generate a secret with
+`openssl rand -hex 32` and replace the auth-secret placeholder before running:
+
+```dotenv
+# Core application
+DATABASE_URL=postgresql://podcast_checker:podcast_checker@127.0.0.1:5432/podcast_checker
+BETTER_AUTH_URL=http://localhost:3000
+BETTER_AUTH_SECRET=replace-with-a-generated-secret-of-at-least-32-characters
+
+# Optional: uncomment both for episode embeddings and semantic search
+# CLOUDFLARE_ACCOUNT_ID=your-32-character-hex-account-id
+# CLOUDFLARE_API_TOKEN=your-workers-ai-api-token
+
+# Optional: enables automatic podcast categories and episode reranking
+# OPENROUTER_API_KEY=your-openrouter-api-key
+EPISODE_RERANKING_ENABLED=true
+
+# Optional model overrides; omit them to use this branch's defaults
+# PODCAST_CLASSIFICATION_MODEL=~typesafe/jev-latest
+# EPISODE_RERANKING_MODEL=nvidia/llama-nemotron-rerank-vl-1b-v2:free
+
+# Optional runtime settings
+LOG_LEVEL=info
+# PODCAST_WORKER_ENABLED=false
+# DATABASE_POOL_MAX=2
+```
+
+AI credentials are optional for the basic app: Apple podcast discovery, following,
+RSS imports, and title/description search do not require them. Without Cloudflare
+credentials, embeddings remain pending and hybrid search falls back to text;
+semantic-only search is unavailable. Without an OpenRouter key, automatic category
+assignment and AI reranking are skipped. The two providers are independent: a text
+search can still be reranked without Cloudflare, and semantic search can run without
+OpenRouter.
+
+### Database, authentication, and integrations
+
+| Variable                       | Required for / default                                         | Notes                                                                                                                                                                                                           |
+| ------------------------------ | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                 | Application, workers, and database-backed features; no default | PostgreSQL connection string. Use the host/port published by Docker locally and the pooled Neon URL for deployed functions. Setting only `DIRECT_DATABASE_URL` does not configure the app's runtime connection. |
+| `DIRECT_DATABASE_URL`          | Optional; migrations fall back to `DATABASE_URL`               | Preferred connection for `pnpm db:migrate`, Drizzle administration, and production startup migrations. Use a direct, non-pooled Neon URL and preserve its TLS parameters.                                       |
+| `DATABASE_POOL_MAX`            | Optional; `2`                                                  | Web/application pool size, integer from `1` to `20`. The Node pg-boss worker also has its own pool.                                                                                                             |
+| `BETTER_AUTH_URL`              | Authentication; set explicitly for each environment            | Canonical origin, such as `http://localhost:3000` locally or your public HTTPS domain in production. Match the actual host and port.                                                                            |
+| `BETTER_AUTH_SECRET`           | Required in production and for Pocket Casts token encryption   | Stable random secret of at least 32 characters. Keep it across restarts and deployments; changing it requires reconnecting Pocket Casts.                                                                        |
+| `CLOUDFLARE_ACCOUNT_ID`        | Embeddings and semantic search                                 | Exactly 32 hexadecimal characters. Use together with `CLOUDFLARE_API_TOKEN`.                                                                                                                                    |
+| `CLOUDFLARE_API_TOKEN`         | Embeddings and semantic search                                 | Workers AI Read and Edit access to the configured account. Used by background ingestion and query embedding.                                                                                                    |
+| `OPENROUTER_API_KEY`           | Automatic podcast categories and episode reranking             | Shared server-side key for both features. Setting it can enable paid Jev category classification even when the episode reranker is free.                                                                        |
+| `PODCAST_CLASSIFICATION_MODEL` | Optional; `~typesafe/jev-latest`                               | Podcast-category classification only. Must support OpenRouter's Decisions API, not chat completions or the rerank endpoint.                                                                                     |
+| `EPISODE_RERANKING_ENABLED`    | Optional; enabled when an OpenRouter key is present            | Set the literal string `false` to disable reranking. `true` does not bypass the API-key requirement. Disabling this does not disable podcast classification.                                                    |
+| `EPISODE_RERANKING_MODEL`      | Optional; branch-specific default below                        | Episode search only. The model must match the adapter in the branch you are running.                                                                                                                            |
+
+There is no separate Pocket Casts API-key variable: connect your Pocket Casts
+account through the UI. Apple podcast discovery needs no API key, and the current
+embedding implementation does not use `OPENAI_API_KEY`. Registration is controlled
+by the database's `signup_enabled` feature flag, not an environment variable.
+
+### NVIDIA versus Jev episode ranking
+
+| Working directory / branch                                | Default `EPISODE_RERANKING_MODEL`            | API                                                       |
+| --------------------------------------------------------- | -------------------------------------------- | --------------------------------------------------------- |
+| Primary NVIDIA implementation                             | `nvidia/llama-nemotron-rerank-vl-1b-v2:free` | OpenRouter Rerank API                                     |
+| `episode-search-jev` worktree / `feat/episode-search-jev` | `typesafe/jev-1.14`                          | OpenRouter Decisions API through TanStack AI's `decide()` |
+
+Omit `EPISODE_RERANKING_MODEL` to use the correct branch default. If copying local
+settings into the Jev worktree, remove any NVIDIA override or replace it with:
+
+```dotenv
+EPISODE_RERANKING_ENABLED=true
+EPISODE_RERANKING_MODEL=typesafe/jev-1.14
+BETTER_AUTH_URL=http://localhost:3001
+```
+
+Keep `OPENROUTER_API_KEY` configured there and start that worktree with
+`pnpm exec vite dev --port 3001`. Changing the model variable alone does **not**
+switch the primary NVIDIA implementation to Jev: the two branches use different
+API adapters. `PODCAST_CLASSIFICATION_MODEL` is unrelated to episode ranking and
+can stay on Jev in either branch. Jev and paid model overrides incur OpenRouter
+charges; the NVIDIA free variant is subject to provider availability and quotas.
+
+### Ingestion and server settings
+
+| Variable                        | Default / scope                                            | Notes                                                                                                                                                                                                                                                                    |
+| ------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PODCAST_WORKER_ENABLED`        | Automatic worker enabled in Node/Nitro                     | The literal string `false` disables the automatic worker thread. It does not disable `pnpm ingest:once` or Netlify scheduled/background functions. Compose explicitly sets this to `true`; change its `environment` entry or use a Compose override to disable it there. |
+| `PODCAST_REFRESH_MINUTES`       | `60`; Node worker and bounded ingestion runner             | Refresh interval, integer from `1` to `10080`.                                                                                                                                                                                                                           |
+| `PODCAST_FEED_CONCURRENCY`      | `1`; Node worker only                                      | Parallel feed-sync jobs, integer from `1` to `8`. Not used by Netlify's bounded runner.                                                                                                                                                                                  |
+| `PODCAST_EMBEDDING_CONCURRENCY` | `1`; Node worker only                                      | Parallel embedding batches, integer from `1` to `8`. Not used by Netlify's bounded runner.                                                                                                                                                                               |
+| `PODCAST_EMBEDDING_BATCH_SIZE`  | `16`; Node worker and bounded ingestion runner             | Inputs per batch, integer from `1` to `32`.                                                                                                                                                                                                                              |
+| `LOG_LEVEL`                     | `info`                                                     | `trace`, `debug`, `info`, `warn`, `error`, `fatal`, or `silent`. Applies to web, worker, and function logs.                                                                                                                                                              |
+| `HOST`, `PORT`                  | Deployment-specific                                        | Node server listening address and port. Compose sets `0.0.0.0` and `3000`. Local `pnpm dev` uses Vite's `--port 3000`; use a CLI port override for another worktree.                                                                                                     |
+| `SERVER_SHUTDOWN_TIMEOUT`       | `85` seconds in Docker or when the automatic worker starts | Node server shutdown budget. Leave enough time for the worker's graceful stop; changing it is normally unnecessary.                                                                                                                                                      |
+
+### Docker Compose settings
+
+These variables configure Compose interpolation, not AI providers:
+
+| Variable            | Default           | Notes                                                                                      |
+| ------------------- | ----------------- | ------------------------------------------------------------------------------------------ |
+| `POSTGRES_USER`     | `podcast_checker` | Database username; used to construct the app container's `DATABASE_URL`.                   |
+| `POSTGRES_DB`       | `podcast_checker` | Database name.                                                                             |
+| `POSTGRES_PASSWORD` | `podcast_checker` | Local development default only; choose a strong production password.                       |
+| `POSTGRES_PORT`     | `5432`            | PostgreSQL port published on the host. Match it in a host-run app's `DATABASE_URL`.        |
+| `APP_PORT`          | `3000`            | App port published on the host; the app still listens on port `3000` inside the container. |
+
+Compose interpolation reads the shell and `.env` by default, not `.env.local`.
+Use `.env` or explicitly pass `docker compose --env-file .env.local ...` if changing
+`POSTGRES_*` or `APP_PORT` locally. The app container's `env_file` list loads `.env`
+then `.env.local`, with the latter winning, but explicit Compose `environment`
+entries take precedence: `DATABASE_URL`, `HOST`, `PORT`, and
+`PODCAST_WORKER_ENABLED` are set there. Changing `POSTGRES_*` does not rename users
+or databases in an already-initialized PostgreSQL volume.
+
+### Netlify, build, and test settings
+
+- `INGESTION_SECRET`: required for deployed Netlify ingestion; generate a separate
+  random secret of at least 32 characters. It is not needed by the Node worker.
+- `URL`: supplied by Netlify and required as an HTTPS destination for scheduled
+  ingestion dispatch. It is not a replacement for `BETTER_AUTH_URL`.
+- `DEPLOY_TARGET`: set to `netlify` to select the Netlify build adapter.
+  `pnpm build:netlify` and `pnpm dev:netlify` set it; Netlify also supplies
+  `NETLIFY` with the value `true` automatically.
+- `NODE_ENV` and Netlify's `CONTEXT` are normally platform-managed; `CONTEXT` is
+  used as a log environment label. Netlify's `NODE_VERSION` is set to `24` in
+  `netlify.toml`.
+- `PODCAST_TEST_DATABASE_URL`: dedicated disposable PostgreSQL/pgvector database
+  for integration tests. Those suites are skipped when unset; they apply migrations
+  and modify test data, so never point it at production. Playwright uses the app's
+  `DATABASE_URL` instead and supplies its own test auth URL/secret, server port, and
+  `PODCAST_WORKER_ENABLED=false`. Enable the signup database flag for that test app.
+- `CI`: normally supplied by CI; enables Playwright's CI reporting/retry settings.
+
+On Netlify, configure runtime secrets in the **Functions** scope and set
+`DIRECT_DATABASE_URL` only on the external migration job when possible. Set
+`PODCAST_REFRESH_MINUTES`, `PODCAST_EMBEDDING_BATCH_SIZE`, and `LOG_LEVEL` there too
+if overriding defaults. Do not run the Node worker and serverless ingestion against
+the same database simultaneously.
+
+After changing settings, restart the development server/worker, recreate the app
+container, or redeploy Netlify as appropriate. Apply migrations before using new
+database-backed features, including episode search snapshots.
 
 ## Automatic podcast categories
 
@@ -257,6 +415,65 @@ calls during pagination and filtering. Searches run on submission and do not pol
 If the embedding provider is unavailable, combined search shows text results with
 an explanation; semantic-only search offers a retry or text search instead.
 
+Embedding calls use TanStack AI's `embed()` with `createCloudflareEmbedding()`.
+A small custom-fetch bridge preserves the Qwen model's native `documents`/`queries`
+payloads, query instruction, caller cancellation and 60-second deadline. It validates
+the provider envelope, row count and 1,024-dimensional vectors and sanitizes numeric
+Cloudflare error codes before the adapter's lifecycle can report an error. These
+compatibility checks remain app-owned because the generic Cloudflare adapter sends
+`text` inputs and does not forward cancellation yet. The embedding model and input
+preprocessing are unchanged; existing stored vectors do not need rebuilding.
+The ingestion CLI and development worker use `tsconfig.scripts.json` to avoid
+tsx resolving an incomplete TypeScript source in TanStack AI's `fast-json-patch`
+dependency; production still uses the compiled worker.
+
+#### Episode relevance reranking
+
+Run `pnpm db:migrate` before starting this version. With `OPENROUTER_API_KEY` set,
+**Most relevant** searches rerank the first 50 retrieved candidates using
+`nvidia/llama-nemotron-rerank-vl-1b-v2:free` through OpenRouter's `/api/v1/rerank`.
+Calls use TanStack AI's `rerank()` and the official `createOpenRouterRerank()`
+adapter. The adapter's OpenRouter SDK handles response parsing, typed errors and
+transient-error retries (a 1.5-second backoff budget inside the overall deadline).
+There is no hand-written HTTP client or second retry loop. SDK debug output is
+disabled to keep upstream response bodies out of application logs.
+Text, semantic and hybrid modes keep their existing candidate membership; the
+ranker receives the query and episode/podcast titles plus cleaned descriptions,
+not embedding vectors. Documents are capped at 6,000 UTF-8 bytes; the UI's
+500-character previews are not used for ranking. No transcripts or images are sent.
+
+- `EPISODE_RERANKING_ENABLED=false` disables provider calls for a baseline comparison.
+- `EPISODE_RERANKING_MODEL` overrides the model with another OpenRouter rerank model.
+  Paid overrides can incur charges; there is no automatic paid-model fallback.
+- The reranking operation has an **eight-second** deadline. Missing credentials,
+  unavailable/free-tier capacity, invalid responses and timeouts preserve the
+  original ranking. Equal scores preserve retrieval order. No results are hidden.
+- Newest/oldest sorting and browsing without a query do not call the reranker.
+
+The search page identifies the applied model or explicitly reports fallback/baseline
+ranking. Server events `search.reranked` and `search.reranking_unavailable` include
+duration, candidate count and available usage cost, but never queries or descriptions.
+
+Authenticated search snapshots persist ordered episode IDs in PostgreSQL for
+15 minutes, including fallback order. The top 50 are reranked and the remaining
+matches keep their original order. Snapshots are scoped to the user, filters,
+current follows, model, enabled state and ranking version. Repeated searches reuse
+the snapshot; later pages reuse it across serverless instances without re-embedding
+or reranking. Newly ingested episodes appear after expiry. Expired results offer a
+retry that restarts pagination. Every page rechecks current follow access. Expired
+snapshots are deleted when a new search snapshot is created, and user deletion
+cascades to its snapshots. Only hashed search fingerprints, IDs and ranking
+diagnostics are stored, not raw query text or document content.
+
+For comparison, the `episode-search-jev` worktree uses the same retrieval, document
+limits and pagination, with a Jev Decisions adapter instead. See that worktree's
+README for its provider details. Configure the same database and credentials in
+both working directories, then run the primary app with `pnpm dev` and the other
+with `pnpm exec vite dev --port 3001`. Compare identical queries, search mode,
+podcast/tag filters and date range with ingestion paused for a controlled comparison.
+Model/version-scoped snapshots prevent one ranker from reusing the other's results.
+Check the ranking banner rather than assuming a successful search used AI ranking.
+
 ## Background RSS ingestion and episode embeddings
 
 Following a podcast with an RSS URL atomically creates or links a shared feed
@@ -325,8 +542,15 @@ BETTER_AUTH_SECRET=replace-with-a-long-random-secret
 BETTER_AUTH_URL=https://podcasts.example.com
 CLOUDFLARE_ACCOUNT_ID=your-32-character-account-id
 CLOUDFLARE_API_TOKEN=your-workers-ai-api-token
+OPENROUTER_API_KEY=your-openrouter-api-key
+EPISODE_RERANKING_ENABLED=true
+LOG_LEVEL=info
 APP_PORT=3000
 ```
+
+Omit the Cloudflare entries for RSS-only ingestion, or the OpenRouter entry if you
+do not want automatic categorisation or AI reranking. Model overrides and worker
+tuning are listed in [Environment variables](#environment-variables).
 
 Then deploy:
 
@@ -335,8 +559,10 @@ docker compose up -d --build
 docker compose logs -f app
 ```
 
-The app reads `.env` then `.env.local` and connects to `postgres:5432`. Compose
-substitution of `POSTGRES_*` and `APP_PORT` uses `.env` or the shell. The app runs
+Compose passes `.env` then `.env.local` into the app container, with the latter
+winning except for explicit `environment` entries, and connects the app to
+`postgres:5432`. Compose substitution of `POSTGRES_*` and `APP_PORT` uses `.env`
+or the shell by default. The app runs
 migrations before starting the web server and worker, including on an existing
 database volume. Startup fails if migrations fail. Its HTTP port is bound to
 `127.0.0.1:3000` on the VPS; point your host reverse proxy (Caddy/nginx) there for
@@ -379,7 +605,7 @@ Netlify builds also select the adapter automatically through `NETLIFY=true`.
 Local development remains unchanged:
 
 ```bash
-# Copy .env.example to .env.local only if you do not already have local settings.
+# Create .env.local using the Environment variables example above, if needed.
 pnpm db:setup
 pnpm dev
 ```
@@ -433,14 +659,20 @@ unchanged to preserve existing encrypted Pocket Casts tokens.
 Set these in the Netlify UI/CLI, not in committed files. Include the **Functions**
 scope where scope controls are available:
 
-| Variable                | Production value                                                          |
-| ----------------------- | ------------------------------------------------------------------------- |
-| `DATABASE_URL`          | Neon pooled connection string, including TLS parameters                   |
-| `BETTER_AUTH_URL`       | Canonical public HTTPS URL, matching your Netlify site/custom domain      |
-| `BETTER_AUTH_SECRET`    | Stable random secret of at least 32 characters                            |
-| `INGESTION_SECRET`      | Separate random secret of at least 32 characters (`openssl rand -hex 32`) |
-| `CLOUDFLARE_ACCOUNT_ID` | Workers AI account ID (optional for RSS-only ingestion)                   |
-| `CLOUDFLARE_API_TOKEN`  | Workers AI API token (optional for RSS-only ingestion)                    |
+| Variable                       | Production value                                                                          |
+| ------------------------------ | ----------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                 | Neon pooled connection string, including TLS parameters                                   |
+| `BETTER_AUTH_URL`              | Canonical public HTTPS URL, matching your Netlify site/custom domain                      |
+| `BETTER_AUTH_SECRET`           | Stable random secret of at least 32 characters                                            |
+| `INGESTION_SECRET`             | Separate random secret of at least 32 characters (`openssl rand -hex 32`)                 |
+| `CLOUDFLARE_ACCOUNT_ID`        | Workers AI account ID (optional for RSS-only ingestion)                                   |
+| `CLOUDFLARE_API_TOKEN`         | Workers AI API token (optional for RSS-only ingestion)                                    |
+| `OPENROUTER_API_KEY`           | Optional; enables podcast categorisation and episode reranking                            |
+| `PODCAST_CLASSIFICATION_MODEL` | Optional; defaults to `~typesafe/jev-latest` for category decisions                       |
+| `EPISODE_RERANKING_ENABLED`    | Optional; set `false` to disable reranking without disabling categorisation               |
+| `EPISODE_RERANKING_MODEL`      | Optional; use this branch's default or a compatible model from the ranking profiles above |
+| `DATABASE_POOL_MAX`            | Optional; `2` by default, allowed range `1`–`20`                                          |
+| `LOG_LEVEL`                    | Optional; `info` by default                                                               |
 
 `DIRECT_DATABASE_URL` is only needed by the external migration step, not deployed
 functions. Netlify supplies `URL` automatically for the scheduled dispatcher's

@@ -16,6 +16,7 @@ export default defineConfig({
     './src/db/feature-flag-schema.ts',
     './src/db/library-schema.ts',
     './src/db/ingestion-schema.ts',
+    './src/db/episode-search-schema.ts',
     './src/db/pocket-casts-schema.ts',
   ],
   dialect: 'postgresql',

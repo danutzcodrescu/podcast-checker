@@ -1,30 +1,134 @@
-import { and, asc, cosineDistance, eq, gte, or, sql } from 'drizzle-orm'
-import { z } from 'zod'
+import { and, asc, cosineDistance, eq, gte, inArray, or, sql } from 'drizzle-orm'
+import type { z } from 'zod'
 
 import { db } from '#/db'
 import { episodeEmbedding, podcastEpisode } from '#/db/ingestion-schema'
 import { followedPodcast } from '#/db/library-schema'
 import { embedEpisodeQuery } from '#/lib/episode-query-embedding'
 import { embeddingModel, preprocessingVersion } from '#/lib/episode-text'
-import { podcastIdInput } from '#/lib/podcast-library-input'
+import { episodeSearchExpired, episodesInput } from '#/lib/episode-search-input'
+import {
+  episodeSearchFingerprint,
+  findEpisodeSearchSession,
+  loadEpisodeSearchSession,
+  saveEpisodeSearchSession,
+} from '#/lib/episode-search-session'
+import {
+  rerankEpisodes,
+  rerankingCandidateLimit,
+  rerankingConfiguration,
+} from '#/lib/episode-reranking'
 import { getLogger } from '#/lib/logger'
 
-export const episodesInput = z.object({
-  podcastId: podcastIdInput.nullable(),
-  categoryId: z.string().max(120).nullable(),
-  days: z.union([z.literal(7), z.literal(30), z.literal(90)]).nullable(),
-  sort: z.enum(['newest', 'oldest', 'relevance']),
-  term: z.string().trim().max(200).default(''),
-  searchMode: z.enum(['hybrid', 'text', 'semantic']).default('hybrid'),
-  offset: z.number().int().min(0).max(1_000_000),
-})
-
-export type EpisodeFilters = Omit<z.infer<typeof episodesInput>, 'offset'>
-export type EpisodeSearchMode = EpisodeFilters['searchMode']
+export { episodesInput } from '#/lib/episode-search-input'
+export type { EpisodeFilters, EpisodeSearchMode } from '#/lib/episode-search-input'
 const pageSize = 25
 
 export async function readLatestEpisodes(userId: string, data: z.infer<typeof episodesInput>) {
   const searching = Boolean(data.term)
+  const relevanceSearch = searching && data.sort === 'relevance'
+  // A feed can be listed under more than one Apple ID; show each episode once.
+  const followed = db
+    .selectDistinctOn([followedPodcast.feedId], {
+      feedId: followedPodcast.feedId,
+      podcast: followedPodcast.podcast,
+      categories: followedPodcast.categories,
+    })
+    .from(followedPodcast)
+    .where(
+      and(
+        eq(followedPodcast.userId, userId),
+        data.podcastId === null ? undefined : eq(followedPodcast.podcastId, data.podcastId),
+        data.categoryId === null
+          ? undefined
+          : sql`${data.categoryId} = any(${followedPodcast.categories})`,
+      ),
+    )
+    .orderBy(asc(followedPodcast.feedId), asc(followedPodcast.podcastId))
+    .as('followed')
+  const selection = {
+    id: podcastEpisode.id,
+    title: podcastEpisode.title,
+    description: sql<string>`left(${podcastEpisode.cleanedDescription}, 500)`,
+    publishedAt: podcastEpisode.publishedAt,
+    durationSeconds: podcastEpisode.durationSeconds,
+    artworkUrl: podcastEpisode.artworkUrl,
+    podcast: followed.podcast,
+    categories: followed.categories,
+  }
+  const serialize = (
+    rows: {
+      id: string
+      title: string
+      description: string
+      publishedAt: Date | null
+      durationSeconds: number | null
+      artworkUrl: string | null
+      podcast: typeof followedPodcast.$inferSelect.podcast
+      categories: string[]
+      textMatch: boolean
+    }[],
+  ) =>
+    rows.map(({ textMatch, ...episode }) => ({
+      ...episode,
+      publishedAt: episode.publishedAt?.toISOString() ?? null,
+      matchType: searching
+        ? data.searchMode === 'semantic' || !textMatch
+          ? ('semantic' as const)
+          : ('text' as const)
+        : null,
+    }))
+  // Hash filters, model/version and the current library; never persist the query itself.
+  const fingerprint = relevanceSearch
+    ? episodeSearchFingerprint({
+        term: data.term,
+        podcastId: data.podcastId,
+        categoryId: data.categoryId,
+        days: data.days,
+        searchMode: data.searchMode,
+        configuration: rerankingConfiguration(),
+        retrieval: { embeddingModel, preprocessingVersion },
+        followed: await db.select().from(followed).orderBy(asc(followed.feedId)),
+      })
+    : null
+
+  const readSnapshotPage = async (
+    session: Awaited<ReturnType<typeof saveEpisodeSearchSession>>,
+  ) => {
+    const ids = session.episodeIds.slice(data.offset, data.offset + pageSize)
+    // Re-authorize against current follows on every page, not just when the snapshot is made.
+    const rows = ids.length
+      ? await db
+          .select(selection)
+          .from(podcastEpisode)
+          .innerJoin(followed, eq(followed.feedId, podcastEpisode.feedId))
+          .where(inArray(podcastEpisode.id, ids))
+      : []
+    const positions = new Map(ids.map((id, index) => [id, index]))
+    rows.sort((a, b) => positions.get(a.id)! - positions.get(b.id)!)
+    const textMatches = new Set(session.textMatchIds)
+    const nextOffset = data.offset + ids.length
+    return {
+      episodes: serialize(
+        rows.map((row) => Object.assign(row, { textMatch: textMatches.has(row.id) })),
+      ),
+      total: session.episodeIds.length,
+      nextOffset: nextOffset < session.episodeIds.length ? nextOffset : null,
+      semanticUnavailable: session.semanticUnavailable,
+      searchSessionId: session.id,
+      ranking: session.ranking,
+    }
+  }
+  if (fingerprint && data.searchSessionId) {
+    return readSnapshotPage(
+      await loadEpisodeSearchSession(data.searchSessionId, userId, fingerprint),
+    )
+  }
+  if (fingerprint && data.offset > 0) throw new Error(episodeSearchExpired)
+  if (fingerprint) {
+    const cached = await findEpisodeSearchSession(userId, fingerprint)
+    if (cached) return readSnapshotPage(cached)
+  }
   let vector: number[] | null = null
   let semanticUnavailable = false
   if (searching && data.searchMode !== 'text') {
@@ -67,25 +171,6 @@ export async function readLatestEpisodes(userId: string, data: z.infer<typeof ep
       : or(textMatch, semanticMatch)
   const score = sql<number>`${textScore} + coalesce(${similarity}, 0.0)`
 
-  // A feed can be listed under more than one Apple ID; show each episode once.
-  const followed = db
-    .selectDistinctOn([followedPodcast.feedId], {
-      feedId: followedPodcast.feedId,
-      podcast: followedPodcast.podcast,
-      categories: followedPodcast.categories,
-    })
-    .from(followedPodcast)
-    .where(
-      and(
-        eq(followedPodcast.userId, userId),
-        data.podcastId === null ? undefined : eq(followedPodcast.podcastId, data.podcastId),
-        data.categoryId === null
-          ? undefined
-          : sql`${data.categoryId} = any(${followedPodcast.categories})`,
-      ),
-    )
-    .orderBy(asc(followedPodcast.feedId), asc(followedPodcast.podcastId))
-    .as('followed')
   const filter = and(
     data.days === null
       ? undefined
@@ -100,17 +185,50 @@ export async function readLatestEpisodes(userId: string, data: z.infer<typeof ep
   )
   const direction = data.sort === 'oldest' ? sql`asc` : sql`desc`
   const dateOrder = sql`${podcastEpisode.publishedAt} ${direction} nulls last`
+  if (fingerprint) {
+    // Freeze all matching IDs (not descriptions/vectors) so ingestion cannot shift later pages.
+    const matches = await db
+      .select({ id: podcastEpisode.id, textMatch })
+      .from(podcastEpisode)
+      .innerJoin(followed, eq(followed.feedId, podcastEpisode.feedId))
+      .leftJoin(episodeEmbedding, compatibleEmbedding)
+      .where(filter)
+      .orderBy(sql`${score} desc`, dateOrder, asc(podcastEpisode.id))
+    const candidateIds = matches.slice(0, rerankingCandidateLimit).map(({ id }) => id)
+    const candidates = candidateIds.length
+      ? await db
+          .select({
+            id: podcastEpisode.id,
+            title: podcastEpisode.title,
+            description: sql<string>`left(${podcastEpisode.cleanedDescription}, 12000)`,
+            podcast: followed.podcast,
+          })
+          .from(podcastEpisode)
+          .innerJoin(followed, eq(followed.feedId, podcastEpisode.feedId))
+          .where(inArray(podcastEpisode.id, candidateIds))
+      : []
+    const byId = new Map(candidates.map((episode) => [episode.id, episode]))
+    const { ids, ranking } = await rerankEpisodes(
+      data.term,
+      candidateIds.flatMap((id) => {
+        const episode = byId.get(id)
+        return episode ? [{ ...episode, podcastTitle: episode.podcast.title }] : []
+      }),
+    )
+    const session = await saveEpisodeSearchSession({
+      userId,
+      fingerprint,
+      episodeIds: [...ids, ...matches.slice(rerankingCandidateLimit).map(({ id }) => id)],
+      textMatchIds: matches.filter(({ textMatch: matched }) => matched).map(({ id }) => id),
+      semanticUnavailable,
+      ranking,
+    })
+    return readSnapshotPage(session)
+  }
   const [rows, [count]] = await Promise.all([
     db
       .select({
-        id: podcastEpisode.id,
-        title: podcastEpisode.title,
-        description: sql<string>`left(${podcastEpisode.cleanedDescription}, 500)`,
-        publishedAt: podcastEpisode.publishedAt,
-        durationSeconds: podcastEpisode.durationSeconds,
-        artworkUrl: podcastEpisode.artworkUrl,
-        podcast: followed.podcast,
-        categories: followed.categories,
+        ...selection,
         textMatch,
       })
       .from(podcastEpisode)
@@ -133,23 +251,11 @@ export async function readLatestEpisodes(userId: string, data: z.infer<typeof ep
   ])
   const nextOffset = data.offset + rows.length
   return {
-    episodes: rows.map((episode) => ({
-      id: episode.id,
-      title: episode.title,
-      description: episode.description,
-      publishedAt: episode.publishedAt?.toISOString() ?? null,
-      durationSeconds: episode.durationSeconds,
-      artworkUrl: episode.artworkUrl,
-      podcast: episode.podcast,
-      categories: episode.categories,
-      matchType: searching
-        ? data.searchMode === 'semantic' || !episode.textMatch
-          ? ('semantic' as const)
-          : ('text' as const)
-        : null,
-    })),
+    episodes: serialize(rows),
     total: count.total,
     nextOffset: nextOffset < count.total ? nextOffset : null,
     semanticUnavailable,
+    searchSessionId: null,
+    ranking: null,
   }
 }

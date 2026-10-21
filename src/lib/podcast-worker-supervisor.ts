@@ -1,4 +1,5 @@
 import { Worker } from 'node:worker_threads'
+import { resolve as resolvePath } from 'node:path'
 import { getLogger } from './logger'
 
 type WorkerOptions = {
@@ -28,10 +29,12 @@ export function startPodcastWorker({
   function spawn() {
     if (stopping) return
     // tsx's programmatic loader works in a raw Node thread during Vite dev.
+    // Disable allowJs for scripts: otherwise tsx picks an incomplete .ts source
+    // shipped by TanStack AI's fast-json-patch dependency instead of its built JS.
     // Production starts the compiled Nitro entry directly, without a TS loader.
     worker = development
       ? new Worker(
-          `import('tsx/esm/api').then(({ tsImport }) => tsImport(${JSON.stringify(entry)}, ${JSON.stringify(import.meta.url)}))`,
+          `import('tsx/esm/api').then(({ tsImport }) => tsImport(${JSON.stringify(entry)}, { parentURL: ${JSON.stringify(import.meta.url)}, tsconfig: ${JSON.stringify(resolvePath('tsconfig.scripts.json'))} }))`,
           { eval: true, execArgv: [] },
         )
       : new Worker(entry, { execArgv: [] })

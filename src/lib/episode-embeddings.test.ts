@@ -28,7 +28,7 @@ describe('Cloudflare embedding batches', () => {
   it('sends episode documents to the account-scoped model endpoint and preserves batch order', async () => {
     fetchMock.mockResolvedValue(response([vector(1), vector(2)]))
     expect(await embedEpisodes(['first', 'second'])).toEqual([vector(1), vector(2)])
-    expect(fetchMock.mock.calls[0][0]).toBe(
+    expect(String(fetchMock.mock.calls[0][0])).toBe(
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${embeddingModel}`,
     )
     expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer test-token')
@@ -84,5 +84,26 @@ describe('Cloudflare embedding batches', () => {
     expect(cloudflareEmbeddingsConfigured()).toBe(false)
     await expect(embedEpisodes(['first'])).rejects.toThrow('CLOUDFLARE_ACCOUNT_ID')
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('skips empty batches and honors caller cancellation before sending a request', async () => {
+    expect(await embedEpisodes([])).toEqual([])
+    const controller = new AbortController()
+    controller.abort()
+    await expect(embedEpisodes(['episode'], controller.signal)).rejects.toThrow()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('forwards cancellation through the Cloudflare custom-fetch bridge', async () => {
+    const controller = new AbortController()
+    fetchMock.mockImplementationOnce(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true })
+          controller.abort()
+        }),
+    )
+    await expect(embedEpisodes(['episode'], controller.signal)).rejects.toThrow()
+    expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(true)
   })
 })

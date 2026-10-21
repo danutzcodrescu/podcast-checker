@@ -36,6 +36,16 @@ afterEach(() => {
 })
 
 describe('app-managed podcast worker', () => {
+  it('uses the script-specific tsconfig when loading the development worker', async () => {
+    const supervisor = startPodcastWorker({ entry: '/app/worker.ts', development: true })
+    const worker = mocks.workers[0]
+    expect(worker.entry).toContain('tsconfig.scripts.json')
+    expect(worker.entry).toContain('parentURL')
+    const close = supervisor.close()
+    worker.emit('exit', 0)
+    await close
+  })
+
   it('restarts crashed workers with backoff instead of restarting the web server', async () => {
     const supervisor = startPodcastWorker({ entry: '/app/worker.mjs' })
     mocks.workers[0].emit('message', 'ready')
