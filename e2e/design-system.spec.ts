@@ -1,9 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import { expect, test } from '@playwright/test'
 import { eq } from 'drizzle-orm'
 
-import { db } from '../src/db/index'
 import { user as users } from '../src/db/auth-schema'
+import { expect, test } from './fixtures'
 
 test('loads a local font and decorative artwork without third-party font requests', async ({
   page,
@@ -42,6 +41,7 @@ test('adapts authentication to narrow and tablet layouts without horizontal over
 
 test('keeps mobile library controls out of the way, keyboard accessible, and always visible on desktop', async ({
   page,
+  db,
 }) => {
   let userId = ''
   try {

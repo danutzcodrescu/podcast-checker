@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 
 test('serves built assets without dev-server reload scripts', async ({ page }) => {
   await page.goto('/signin')

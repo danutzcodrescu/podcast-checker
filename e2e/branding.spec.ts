@@ -1,5 +1,6 @@
-import { expect, test } from '@playwright/test'
 import sharp from 'sharp'
+
+import { expect, test } from './fixtures'
 
 test('renders the supplied logo and serves browser and Apple icons on localized pages', async ({
   page,

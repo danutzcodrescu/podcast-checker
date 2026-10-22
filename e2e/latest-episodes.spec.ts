@@ -1,12 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import { expect, test } from '@playwright/test'
 import { inArray, sql } from 'drizzle-orm'
 
-import { db } from '../src/db/index'
 import { user as users } from '../src/db/auth-schema'
 import { podcastEpisode, podcastFeed } from '../src/db/ingestion-schema'
 import { followedPodcast, podcastCategory } from '../src/db/library-schema'
 import { expandLibrary } from './helpers/library'
+import { expect, test } from './fixtures'
 
 function episode(feedId: string, title: string, publishedAt: Date | null) {
   return {
@@ -25,6 +24,7 @@ test('chooses the login landing page and displays only followed episodes with wo
   page,
   browser,
   baseURL,
+  db,
 }) => {
   const email = `episodes-${randomUUID()}@example.com`
   const password = 'test-password-123'

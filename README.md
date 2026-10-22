@@ -145,10 +145,9 @@ or databases in an already-initialized PostgreSQL volume.
   `netlify.toml`.
 - `PODCAST_TEST_DATABASE_URL`: dedicated disposable PostgreSQL/pgvector database
   for integration tests. Those suites are skipped when unset; they apply migrations
-  and modify test data, so never point it at production. Playwright uses the app's
-  `DATABASE_URL` instead and supplies its own test auth URL/secret and server port.
-  It builds the app and runs Vite preview with `NODE_ENV=test` at runtime.
-  Enable the signup database flag for that test app.
+  and modify test data, so never point it at production. Playwright ignores both
+  this setting and the app's `DATABASE_URL`: it creates its own Testcontainers
+  databases and supplies test auth credentials and dynamically allocated server ports.
 - `CI`: normally supplied by CI; enables Playwright's CI reporting/retry settings.
 
 On Netlify, configure runtime secrets in the **Functions** scope and set
@@ -271,15 +270,29 @@ GitHub Actions runs all tests on every push (or manually via **Actions → Tests
 The workflow in `.github/workflows/tests.yml` runs Vitest with both
 `PODCAST_TEST_CONTAINERS=true` and a disposable `PODCAST_TEST_DATABASE_URL`, so
 container-backed and database-only integration suites are enabled. A separate
-job migrates its own pgvector database, enables registration, and runs all three
-Playwright projects. Failed browser tests upload traces and screenshots as an
+job runs all three Playwright projects using isolated Testcontainers databases.
+Failed browser tests upload traces and screenshots as an
 artifact retained for seven days. No repository secrets are required.
 
-Playwright builds the app before starting Vite preview, so development hot reloads
-cannot interrupt browser navigation or hydration. The build uses production mode;
-only the preview runtime uses `NODE_ENV=test` so repeated test-account creation
-does not hit Better Auth's production rate limits. Production authentication
-settings are unchanged.
+Playwright builds the app once, then each worker starts its own
+`pgvector/pgvector:pg18` container, applies migrations, and starts Vite preview on
+an OS-allocated port. Both the server and test data use that worker's database;
+neither uses the development database. Servers, connection pools, and containers
+are stopped when workers finish. Docker must be running.
+
+Stable production assets prevent development hot reloads from interrupting browser
+navigation or hydration. Only the preview runtime uses `NODE_ENV=test`, avoiding
+Better Auth's production rate limits for test accounts. External AI providers are
+disabled in the E2E servers. Production authentication settings are unchanged.
+
+All E2E specs import `test` and `expect` from `e2e/fixtures.ts`. Registration is
+enabled before each test by default. Use `test.use({ signupEnabled: false })` for
+disabled-registration scenarios, or the `setSignupEnabled(false)` fixture to
+disable it while a page is already open. `setSignupEnabled(null)` removes the flag
+row to verify the default-deny behavior. The flag resets after each test, and
+workers never share a database or server, so opposite flag states can run in parallel.
+Tests that seed data receive their isolated database through the `db` fixture;
+do not import the application database into E2E specs.
 
 - `pnpm test` runs Vitest component tests with Testing Library.
 - `pnpm test:watch` runs the component tests in watch mode.
@@ -295,14 +308,15 @@ settings are unchanged.
   Snapshot persistence, retrieval, and reranking policy run unchanged; tests
   control query embeddings and the external scoring adapter, not fallback policy.
 - `pnpm exec playwright install chromium webkit` installs the browsers for end-to-end tests.
-- `pnpm test:e2e` runs the Playwright suite, building and starting the app automatically.
+- `pnpm test:e2e` runs the Playwright suite with Testcontainers, building and starting
+  the app automatically. Docker is required; no database setup or flag changes are needed.
 - `pnpm test:e2e:ui` opens Playwright’s interactive test runner.
 
 Component tests cover authentication, podcast search, following, category
 assignment and filtering, retryable errors, and English/French localization.
 The end-to-end suite also checks database-backed library persistence, account
-isolation, keyboard controls, and mobile layout. Run `pnpm db:setup` first;
-library tests create temporary accounts and remove them after each test.
+isolation, keyboard controls, mobile layout, and enabled/disabled registration.
+Test accounts and data stay inside disposable worker databases.
 
 ## Logo and browser icons
 
@@ -331,8 +345,8 @@ emulation, including checks for logo rendering and delivery of browser icons.
   row is missing), the sign-in page hides its registration link, `/signup`
   returns the standard HTTP 404 page, and the sign-up API returns a generic HTTP
   404 without disclosing the flag. Existing accounts
-  can still sign in. Enable the flag on a dedicated test database before running
-  the Playwright suite, which exercises registration and creates test accounts.
+  can still sign in. The Playwright fixtures manage this flag in their own
+  disposable databases; do not enable it in the development database for tests.
 
 - `/discover` and `/latest-episodes` are authenticated pages; anonymous visitors go to `/signin`.
 - Successful sign-in or sign-up navigates through `/`, which redirects to

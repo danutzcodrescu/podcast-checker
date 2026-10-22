@@ -1,15 +1,15 @@
 import { randomUUID } from 'node:crypto'
-import { expect, test } from '@playwright/test'
 import { eq } from 'drizzle-orm'
 
-import { db } from '../src/db/index'
 import { user as users } from '../src/db/auth-schema'
 import { followedPodcast, podcastCategory } from '../src/db/library-schema'
 import { episodeEmbedding, podcastEpisode, podcastFeed } from '../src/db/ingestion-schema'
 import { embeddingDimensions, embeddingModel, preprocessingVersion } from '../src/lib/episode-text'
 import { expandLibrary } from './helpers/library'
+import { expect, test } from './fixtures'
+import type { TestDatabase } from './fixtures'
 
-async function seedEpisode(feedId: string) {
+async function seedEpisode(db: TestDatabase, feedId: string) {
   const [episode] = await db
     .insert(podcastEpisode)
     .values({
@@ -38,6 +38,7 @@ test('persists category edits and unfollowing, with account-isolated libraries a
   page,
   browser,
   baseURL,
+  db,
 }) => {
   const userIds: string[] = []
   const feedUrl = `https://example.com/library-${randomUUID()}.xml`
@@ -123,7 +124,7 @@ test('persists category edits and unfollowing, with account-isolated libraries a
     }
     /* eslint-enable no-await-in-loop */
 
-    const episodeId = await seedEpisode(feed.id)
+    const episodeId = await seedEpisode(db, feed.id)
 
     await page.reload()
     await expandLibrary(page)
@@ -202,6 +203,7 @@ test('persists category edits and unfollowing, with account-isolated libraries a
 
 test('keeps a shared feed until its last catalog entry is unfollowed, then cascades episodes and embeddings', async ({
   page,
+  db,
 }) => {
   let userId = ''
   let feedId = ''
@@ -237,7 +239,7 @@ test('keeps a shared feed until its last catalog entry is unfollowed, then casca
         },
       })),
     )
-    const episodeId = await seedEpisode(feedId)
+    const episodeId = await seedEpisode(db, feedId)
     await page.goto('/discover')
     await expandLibrary(page)
     const sidebar = page.getByRole('complementary')

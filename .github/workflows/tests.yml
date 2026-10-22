@@ -51,22 +51,6 @@ jobs:
     name: Playwright (Chromium, WebKit, mobile Safari)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    env:
-      DATABASE_URL: postgresql://podcast_checker:podcast_checker@127.0.0.1:5432/podcast_checker_e2e
-    services:
-      postgres:
-        image: pgvector/pgvector:pg18
-        env:
-          POSTGRES_USER: podcast_checker
-          POSTGRES_PASSWORD: podcast_checker
-          POSTGRES_DB: podcast_checker_e2e
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U podcast_checker -d podcast_checker_e2e"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v4
@@ -79,13 +63,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Install Playwright browsers and system dependencies
         run: pnpm exec playwright install --with-deps chromium webkit
-      - name: Migrate the disposable E2E database
-        run: pnpm db:migrate
-      - name: Enable registration for E2E accounts
-        run: >-
-          docker exec ${{ job.services.postgres.id }}
-          psql -U podcast_checker -d podcast_checker_e2e -v ON_ERROR_STOP=1
-          -c "UPDATE feature_flag SET enabled = true WHERE key = 'signup_enabled';"
       - name: Run all Playwright projects
         run: pnpm test:e2e --workers=2
       - name: Upload Playwright failure traces and screenshots
