@@ -1,4 +1,4 @@
-import { Eye, EyeOff } from 'lucide-react'
+import { Eye, EyeOff, LockKeyhole } from 'lucide-react'
 import { useState } from 'react'
 import type { ComponentProps } from 'react'
 
@@ -22,11 +22,15 @@ export function PasswordInput({
 
   return (
     <div className="relative">
+      <LockKeyhole
+        className="pointer-events-none absolute top-4 left-4 size-5 text-muted-foreground"
+        aria-hidden="true"
+      />
       <Input
         {...props}
         id={id}
         type={visible ? 'text' : 'password'}
-        className={cn('h-12 px-4 pr-14', className)}
+        className={cn('h-13 pr-14 pl-12', className)}
         disabled={disabled}
       />
       <button

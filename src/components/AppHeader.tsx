@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 
+import { Brand } from '#/components/Brand'
 import { cn } from '#/lib/utils'
 import { m } from '#/paraglide/messages'
 
@@ -14,24 +15,13 @@ export function AppHeader({
   return (
     <header
       className={cn(
-        'mx-auto flex max-w-page flex-wrap items-center justify-between gap-5',
+        'mx-auto flex min-h-14 max-w-7xl flex-wrap items-center justify-between gap-5',
         variant === 'discover' &&
-          'gap-8 border-b border-border pb-6 tablet:grid tablet:grid-cols-[minmax(0,1fr)_auto] tablet:gap-5',
+          'justify-start gap-10 border-b border-border tablet:grid tablet:grid-cols-[minmax(0,1fr)_auto] tablet:gap-x-5 tablet:gap-y-0',
       )}
     >
-      <Link
-        to="/"
-        className="inline-flex items-center gap-3 text-xl font-bold tracking-tight text-heading no-underline mobile:gap-2 mobile:text-lg"
-        aria-label={m.brand_home()}
-      >
-        <img
-          className="size-8 shrink-0 object-contain"
-          src="/logo-mark.png"
-          alt=""
-          width={32}
-          height={32}
-        />
-        <span>Podcast Finder</span>
+      <Link to="/" className="inline-flex no-underline" aria-label={m.brand_home()}>
+        <Brand />
       </Link>
       {children}
     </header>

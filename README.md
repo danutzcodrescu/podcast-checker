@@ -512,6 +512,85 @@ podcast/tag filters and date range with ingestion paused for a controlled compar
 Model/version-scoped snapshots prevent one ranker from reusing the other's results.
 Check the ranking banner rather than assuming a successful search used AI ranking.
 
+## Conversational episode search (planned)
+
+These are agreed design decisions, not implemented functionality. Chat will become
+the default authenticated landing page, while **Latest episodes** remains available
+for full browsing. An empty library links to **Discover** without searching the
+public podcast catalog from chat.
+
+### Scope and interpretation
+
+- Chat is a read-only interface for episode search, not a personalised recommendation
+  engine. It searches only imported episodes from the listener's followed podcasts,
+  grounded in RSS titles and descriptions, not transcripts or listening history.
+- TanStack AI translates a natural-language request into one distilled query shared
+  by existing keyword and semantic matching, plus supported filters. Hybrid search
+  is the default; existing retrieval, fallback, and relevance-reranking rules remain
+  authoritative. The chat model does not select or reorder the returned episodes.
+- Support the existing query, single podcast, single listener-owned category,
+  timeframe, sort, and search-mode options. Podcast and category filters intersect.
+  Topic searches default to relevance sorting, matching the existing search UI.
+- Chat defaults to **all time**, unlike the browsing page's seven-day default.
+  Supported timeframes are rolling **7, 30, or 90 days**, or **all time**.
+- Unsupported or ambiguous requests prompt the listener to correct the request or
+  choose a supported timeframe before searching. Do not silently approximate
+  "last 14 days" or "during 2024", drop a duration constraint such as "under
+  30 minutes", or run a partial search. Do not broaden a timeframe automatically.
+- Keep context for follow-ups such as "same topic, but the last 30 days" while
+  the chat page is open. Do not persist conversations in browser storage or the
+  database; a reload starts fresh. No long-term preference profile is maintained.
+
+### Cards and See more
+
+- Render native React episode cards from validated tool results, reusing the
+  existing card presentation rather than model-generated episode data or HTML.
+  MCP Apps/iframe infrastructure is unnecessary for this version.
+- Show at most **10 distinct episode cards per assistant response**, even if
+  multiple searches occur. Preserve existing search order; the model must not
+  introduce a separate recommendation ranking.
+- Cards can retain explicit user-clicked actions, including **Play next in Pocket
+  Casts**. These are ordinary application actions: the assistant has no write tools
+  and cannot queue episodes, change follows, or modify account data.
+- **See more** opens `/latest-episodes` with the effective search criteria in
+  `q`, `podcast`, `category`, `days`, `sort`, and `mode`, using the existing typed
+  search-parameter helpers. Preserve the resolved timeframe, including one set by
+  a follow-up; explicitly encode `days=7`, `days=30`, `days=90`, or `days=all`.
+  Default to `days=all` only when no timeframe has been specified in the current
+  search criteria, never overriding an explicit supported timeframe.
+- For example, "climate" links to
+  `/latest-episodes?q=climate&sort=relevance&days=all`; "climate in the last
+  30 days" links to `/latest-episodes?q=climate&sort=relevance&days=30`.
+  Preserve any podcast/category filters and non-default search mode too.
+- The destination starts from the same criteria, not a chat-specific pagination
+  cursor or guaranteed identical snapshot. Existing snapshot reuse/expiry and
+  changing library contents can affect the results shown there.
+
+### Model, safeguards, and validation
+
+Use TanStack AI's OpenRouter adapter with configurable model selection, defaulting
+to paid `minimax/minimax-m3.1-flash`. Do not depend on the temporary `:free`
+variant. On provider failure, offer retry and browsing instead of silently
+switching models. The chat model setting is separate from category classification
+and episode reranking; configuration wiring is part of the future implementation.
+
+Expose purpose-built authenticated read-only tools over the existing library and
+episode-search services, not every server function. Derive listener identity from
+the server session, enforce followed-podcast access, validate tool inputs/outputs,
+and cap displayed results server-side. Protect the streaming endpoint against CSRF,
+bound model/tool execution and request rates, and keep provider keys server-only.
+Do not log raw conversations, search text, episode descriptions, or credentials.
+
+Design for an inexpensive model: explicit supported capabilities, schema validation,
+and focused request-interpretation tests. Schema validation cannot detect every
+semantic misunderstanding. A separate Jev capability classifier is optional if
+evaluation demonstrates a need, not a prerequisite.
+
+Acceptance coverage should include supported filters and follow-up refinements,
+unsupported requests without partial execution, listener isolation, empty libraries,
+the ten-result cap, manual card actions, provider failures, and **See more**
+preserving all effective criteria, especially explicit and default timeframes.
+
 ## Background RSS ingestion and episode embeddings
 
 Following a podcast with an RSS URL atomically creates or links a shared feed

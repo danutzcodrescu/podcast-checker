@@ -1,9 +1,10 @@
 import { Link, useHydrated, useNavigate } from '@tanstack/react-router'
-import { Check, LoaderCircle } from 'lucide-react'
+import { ArrowRight, Check, LoaderCircle, Mail } from 'lucide-react'
 import { useReducer } from 'react'
 import type { SubmitEvent } from 'react'
 
 import { AppHeader } from '#/components/AppHeader'
+import { Brand } from '#/components/Brand'
 import ParaglideLocaleSwitcher from '#/components/LocaleSwitcher'
 import { PageShell } from '#/components/PageShell'
 import { PodcastShowcase } from '#/components/PodcastShowcase'
@@ -50,13 +51,24 @@ export function AuthPage({ mode, signupEnabled = false }: AuthPageProps) {
   return (
     <PageShell>
       <AppHeader />
-      <main className="mx-auto mt-20 grid max-w-7xl grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] items-start gap-20 laptop:gap-9 tablet:mt-12 tablet:max-w-2xl tablet:grid-cols-1 mobile:mt-10 mobile:gap-8">
+      <main className="relative isolate mx-auto mt-16 grid max-w-7xl grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] items-start gap-20 laptop:gap-9 tablet:mt-10 tablet:max-w-2xl tablet:grid-cols-1 tablet:gap-7 mobile:mt-8 mobile:gap-6">
+        <img
+          src="/illustrations/microphone.svg"
+          alt=""
+          aria-hidden="true"
+          width={400}
+          height={320}
+          className="pointer-events-none absolute top-40 -right-64 -z-10 w-[28rem] max-w-none -rotate-12 opacity-80 laptop:hidden"
+        />
         <PodcastShowcase />
-        <div className="mt-10 min-w-0 tablet:row-start-3 tablet:m-0">
+        <div className="min-w-0 tablet:row-start-3">
           <section
-            className="rounded-2xl border border-border bg-surface px-12 pt-16 pb-12 shadow-xs laptop:px-8 laptop:pt-10 laptop:pb-8 tablet:p-9 mobile:px-6 mobile:py-8"
+            className="rounded-3xl border border-white bg-surface px-10 pt-10 pb-9 shadow-elevated ring-1 ring-border/60 laptop:px-8 tablet:p-9 mobile:rounded-2xl mobile:px-6 mobile:py-7"
             aria-labelledby="auth-heading"
           >
+            <div className="mb-9 flex justify-center mobile:mb-7">
+              <Brand />
+            </div>
             <AuthForm key={mode} mode={mode} signupEnabled={signupEnabled} />
           </section>
           <ParaglideLocaleSwitcher />
@@ -122,7 +134,7 @@ function AuthForm({ mode, signupEnabled }: AuthPageProps) {
       </p>
 
       <form
-        className="mt-10 flex flex-col gap-8 mobile:mt-8 mobile:gap-6"
+        className="mt-8 flex flex-col gap-6 mobile:mt-7"
         onSubmit={handleSubmit}
         aria-busy={pending}
       >
@@ -130,16 +142,22 @@ function AuthForm({ mode, signupEnabled }: AuthPageProps) {
           <label className="text-sm font-semibold text-foreground" htmlFor="email">
             {m.auth_email_label()}
           </label>
-          <Input
-            className="h-12 px-4"
-            id="email"
-            name="email"
-            type="email"
-            placeholder={m.auth_email_placeholder()}
-            autoComplete="email"
-            required
-            disabled={!hydrated || pending}
-          />
+          <div className="relative">
+            <Mail
+              className="pointer-events-none absolute top-4 left-4 size-5 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Input
+              className="h-13 pr-4 pl-12"
+              id="email"
+              name="email"
+              type="email"
+              placeholder={m.auth_email_placeholder()}
+              autoComplete="email"
+              required
+              disabled={!hydrated || pending}
+            />
+          </div>
         </div>
 
         <div className="flex flex-col gap-2.5">
@@ -225,7 +243,7 @@ function AuthForm({ mode, signupEnabled }: AuthPageProps) {
           </p>
         )}
 
-        <Button type="submit" disabled={!hydrated || pending}>
+        <Button type="submit" className="min-h-13 text-base" disabled={!hydrated || pending}>
           {pending && <LoaderCircle className="size-5 animate-spin" aria-hidden="true" />}
           {pending
             ? isSignUp
@@ -234,6 +252,7 @@ function AuthForm({ mode, signupEnabled }: AuthPageProps) {
             : isSignUp
               ? m.auth_create_account()
               : m.auth_sign_in()}
+          {!pending && <ArrowRight className="size-5" aria-hidden="true" />}
         </Button>
       </form>
 
@@ -241,7 +260,7 @@ function AuthForm({ mode, signupEnabled }: AuthPageProps) {
         <div className="mt-9 flex flex-wrap justify-center gap-2 border-t border-border pt-9 text-sm text-foreground mobile:mt-7 mobile:pt-6">
           <span>{isSignUp ? m.auth_existing_account() : m.auth_new_here()}</span>
           <Link
-            className="underline underline-offset-4 hover:text-link"
+            className="font-semibold text-link hover:underline hover:underline-offset-4"
             to={isSignUp ? '/signin' : '/signup'}
           >
             {isSignUp ? m.auth_sign_in() : m.auth_create_account_heading()}

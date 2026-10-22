@@ -72,7 +72,7 @@ export function PodcastLibrary({
   )
 
   return (
-    <div className="grid grid-cols-[18rem_minmax(0,1fr)] items-start gap-8 tablet:grid-cols-1 tablet:gap-6">
+    <div className="grid grid-cols-[16rem_minmax(0,1fr)] items-start gap-6 tablet:grid-cols-1 tablet:gap-5">
       <PodcastLibrarySidebar
         library={library}
         matches={matches}

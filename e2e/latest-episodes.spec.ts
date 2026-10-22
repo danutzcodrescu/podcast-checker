@@ -6,6 +6,7 @@ import { db } from '../src/db/index'
 import { user as users } from '../src/db/auth-schema'
 import { podcastEpisode, podcastFeed } from '../src/db/ingestion-schema'
 import { followedPodcast, podcastCategory } from '../src/db/library-schema'
+import { expandLibrary } from './helpers/library'
 
 function episode(feedId: string, title: string, publishedAt: Date | null) {
   return {
@@ -209,6 +210,7 @@ test('chooses the login landing page and displays only followed episodes with wo
     await expect(page.getByRole('heading', { name: 'Private show', exact: true })).toHaveCount(0)
 
     const sidebar = page.getByRole('complementary')
+    await expandLibrary(page)
     await sidebar.getByRole('button', { name: 'History 1', exact: true }).click()
     await expect(page.getByText('3 episodes', { exact: true })).toBeVisible()
     await expect(page.getByRole('combobox', { name: 'Filter episodes by tag' })).toHaveValue(

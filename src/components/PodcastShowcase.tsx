@@ -1,10 +1,10 @@
-import { AudioLines, Play } from 'lucide-react'
+import { AudioLines } from 'lucide-react'
 
 import { cn } from '#/lib/utils'
 import { m } from '#/paraglide/messages'
 
 const artworkStyles = {
-  development: 'text-surface-muted-foreground bg-[linear-gradient(140deg,#e4edf1,#cbdce3)]',
+  development: 'text-[#6554ad] bg-[linear-gradient(140deg,#dae4ff,#d4d7f6)]',
   history: 'text-[#98746a] bg-[linear-gradient(140deg,#f5e7e0,#e8cfc5)]',
   world: 'text-[#59776d] bg-[linear-gradient(140deg,#e5eee8,#ccdfd4)]',
 }
@@ -45,15 +45,20 @@ const podcasts = [
 export function PodcastShowcase() {
   return (
     <section className="tablet:contents" aria-labelledby="discovery-heading">
-      <h1
-        id="discovery-heading"
-        className="m-0 text-hero leading-none font-extrabold tracking-tighter tablet:row-start-1 tablet:text-hero-compact [&:lang(fr)]:text-hero-localized"
-      >
-        {m.discovery_heading_start()}
-        <br />
-        {m.discovery_heading_end()}
-      </h1>
-      <p className="mt-5 mb-10 text-intro leading-snug tracking-tight text-subtle tablet:row-start-2 tablet:-mt-5 tablet:mb-0">
+      <div className="tablet:row-start-1">
+        <p className="mb-4 text-xs font-semibold tracking-[0.24em] text-primary uppercase">
+          {m.discovery_eyebrow()}
+        </p>
+        <h1
+          id="discovery-heading"
+          className="m-0 text-hero leading-[1.04] font-bold tracking-tighter text-heading tablet:text-hero-compact [&:lang(fr)]:text-hero-localized"
+        >
+          {m.discovery_heading_start()}
+          <br />
+          <span className="text-primary">{m.discovery_heading_end()}</span>
+        </h1>
+      </div>
+      <p className="mt-5 mb-8 text-intro leading-snug tracking-tight text-subtle tablet:row-start-2 tablet:-mt-3 tablet:mb-0">
         {m.discovery_subtitle()}
       </p>
 
@@ -64,11 +69,11 @@ export function PodcastShowcase() {
         {podcasts.map((podcast) => (
           <li
             key={podcast.name}
-            className="relative flex min-h-48 items-center gap-6 rounded-2xl border border-card-border bg-white/50 p-4 laptop:gap-4 tablet:min-h-40 mobile:gap-3"
+            className="flex min-h-36 items-center gap-5 rounded-2xl border border-card-border bg-white/70 p-3.5 shadow-card laptop:gap-4 mobile:gap-3"
           >
             <div
               className={cn(
-                'flex h-40 shrink-0 basis-40 flex-col items-center justify-center gap-4 overflow-hidden rounded-lg border border-black/2 laptop:h-36 laptop:basis-32 tablet:h-32 mobile:h-28 mobile:basis-20 mobile:gap-2',
+                'flex size-28 shrink-0 items-center justify-center overflow-hidden rounded-xl mobile:size-20',
                 artworkStyles[podcast.artwork],
               )}
               aria-hidden="true"
@@ -78,12 +83,9 @@ export function PodcastShowcase() {
                 aria-hidden="true"
                 strokeWidth={1.25}
               />
-              <span className="text-caption tracking-wide opacity-75 mobile:max-w-16 mobile:text-center mobile:leading-snug">
-                {m.artwork_placeholder()}
-              </span>
             </div>
             <div className="min-w-0 flex-1">
-              <h2 className="mt-0 mr-9 mb-1 text-lg leading-tight font-bold tracking-tight text-heading laptop:mr-8 mobile:mr-0 mobile:text-base">
+              <h2 className="mt-0 mb-1 text-base leading-tight font-bold tracking-tight text-heading">
                 {podcast.name}
               </h2>
               <p className="m-0 text-sm leading-snug text-subtle mobile:text-xs">{podcast.hosts}</p>
@@ -104,12 +106,6 @@ export function PodcastShowcase() {
                 {podcast.description()}
               </p>
             </div>
-            <span
-              className="absolute top-6 right-6 grid size-12 place-items-center rounded-full bg-accent laptop:top-4 laptop:right-4 laptop:size-8 mobile:hidden"
-              aria-hidden="true"
-            >
-              <Play className="ml-1 size-6 laptop:size-4" fill="currentColor" strokeWidth={0} />
-            </span>
           </li>
         ))}
       </ul>

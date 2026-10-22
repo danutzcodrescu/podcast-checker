@@ -38,7 +38,7 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
       },
       {
         name: 'theme-color',
-        content: '#fdfcfb',
+        content: '#fafaff',
       },
       {
         name: 'apple-mobile-web-app-title',
@@ -46,6 +46,13 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
       },
     ],
     links: [
+      {
+        rel: 'preload',
+        href: '/fonts/InterVariable.woff2',
+        as: 'font',
+        type: 'font/woff2',
+        crossOrigin: 'anonymous',
+      },
       {
         rel: 'stylesheet',
         href: appCss,
@@ -76,7 +83,7 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
       {
         rel: 'mask-icon',
         href: '/safari-pinned-tab.svg',
-        color: '#191b1e',
+        color: '#6236f5',
       },
     ],
   }),

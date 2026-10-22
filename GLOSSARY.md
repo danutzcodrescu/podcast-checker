@@ -19,6 +19,13 @@ The assignment of listener-owned categories to a follow. Automatic categorisatio
 **Episode**:
 An individual release from a podcast, described by its title, publication details, and content metadata.
 
+**Episode search**:
+Finding episodes from a listener's followed podcasts using their stated criteria, rather than discovering other podcasts or inferring preferences from listening history.
+_Avoid_: Personalised recommendation, podcast discovery
+
+**Search criteria**:
+A listener's topic and optional podcast, category, publication timeframe, and ordering preferences for an episode search. Follow-up requests can refine these criteria.
+
 **Search snapshot**:
 A listener's ordered set of matching episodes captured for stable search pagination. Membership and order are fixed for its lifetime; episode content and the listener's access can still change.
 

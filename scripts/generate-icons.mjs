@@ -3,11 +3,19 @@ import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
 
 const assetUrl = (name) => new URL(`../public/${name}`, import.meta.url)
-const logo = await sharp(fileURLToPath(assetUrl('logo.png')))
+const silhouette = await sharp(fileURLToPath(assetUrl('logo.png')))
   .trim({ threshold: 10 })
-  .png()
-  .toBuffer()
-const background = '#fdfcfb'
+  .ensureAlpha()
+  .raw()
+  .toBuffer({ resolveWithObject: true })
+// Preserve the supplied waveform silhouette and its antialiased alpha edges.
+for (let offset = 0; offset < silhouette.data.length; offset += 4) {
+  silhouette.data[offset] = 0x62
+  silhouette.data[offset + 1] = 0x36
+  silhouette.data[offset + 2] = 0xf5
+}
+const logo = await sharp(silhouette.data, { raw: silhouette.info }).png().toBuffer()
+const background = '#fafaff'
 
 async function renderIcon(size, transparent = false) {
   const artworkSize = Math.round(size * (transparent ? 0.95 : 0.8))

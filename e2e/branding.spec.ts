@@ -47,7 +47,7 @@ test('renders the supplied logo and serves browser and Apple icons on localized 
     'href',
     '/safari-pinned-tab.svg',
   )
-  await expect(page.locator('head link[rel="mask-icon"]')).toHaveAttribute('color', '#191b1e')
+  await expect(page.locator('head link[rel="mask-icon"]')).toHaveAttribute('color', '#6236f5')
   const mask = await request.get('/safari-pinned-tab.svg')
   expect(mask.ok()).toBe(true)
   expect(mask.headers()['content-type']).toContain('image/svg+xml')

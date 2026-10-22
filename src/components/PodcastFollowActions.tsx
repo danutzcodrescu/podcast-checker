@@ -147,7 +147,7 @@ export function PodcastFollowActions({
   const [open, setOpen] = useState(false)
 
   return (
-    <div className="flex w-40 flex-col gap-2">
+    <div className="flex w-40 flex-col gap-2 mobile:w-full mobile:flex-row mobile:[&>*]:flex-1">
       <Button
         type="button"
         variant={followed ? 'outline' : 'default'}

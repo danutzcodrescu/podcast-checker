@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { CategoryBadge, PodcastArtwork } from '#/components/PodcastCard'
 import { EpisodeSearchForm } from '#/components/EpisodeSearchForm'
+import { PodcastHero } from '#/components/PodcastHero'
 import type { PodcastLibraryFilter } from '#/components/PodcastLibrary'
 import { PodcastLibrarySidebar } from '#/components/PodcastLibrarySidebar'
 import { PodcastPageShell } from '#/components/PodcastPageShell'
@@ -60,7 +61,7 @@ function EpisodeCard({
   const queued = currentAction && queue.isSuccess
 
   return (
-    <li className="flex items-start gap-5 rounded-xl border border-card-border bg-surface p-4 mobile:gap-3 mobile:p-3">
+    <li className="flex items-start gap-5 rounded-xl border border-card-border bg-surface p-4 shadow-card mobile:gap-3 mobile:p-3">
       <PodcastArtwork
         key={episode.artworkUrl ?? episode.podcast.artworkUrl}
         podcast={{
@@ -230,7 +231,7 @@ export function LatestEpisodesPage({
 
   return (
     <PodcastPageShell email={email} activeTab="latest-episodes">
-      <div className="grid grid-cols-[18rem_minmax(0,1fr)] items-start gap-8 tablet:grid-cols-1 tablet:gap-6">
+      <div className="grid grid-cols-[16rem_minmax(0,1fr)] items-start gap-6 tablet:grid-cols-1 tablet:gap-5">
         <PodcastLibrarySidebar
           library={library}
           matches={matches}
@@ -240,12 +241,18 @@ export function LatestEpisodesPage({
           onFilterChange={onFilterChange}
         />
         <section className="min-w-0" aria-labelledby="episodes-heading">
-          <div className="mb-6 flex items-start justify-between gap-4">
+          <PodcastHero
+            headingId="episodes-discovery-heading"
+            eyebrow={m.discovery_eyebrow()}
+            title={m.episodes_hero_heading()}
+            description={m.episodes_hero_description()}
+          />
+          <div className="mb-5 flex items-start justify-between gap-4">
             <div>
-              <h1 id="episodes-heading" className="text-page-title font-bold tracking-tight">
+              <h2 id="episodes-heading" className="text-2xl font-bold tracking-tight">
                 {m.episodes_heading()}
-              </h1>
-              <p className="mt-2 text-base text-muted-foreground">{m.episodes_subtitle()}</p>
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">{m.episodes_subtitle()}</p>
             </div>
             <Button
               variant="outline"
@@ -304,7 +311,7 @@ export function LatestEpisodesPage({
               {m.library_save_error()}
             </p>
           )}
-          <div className="mb-4 grid grid-cols-3 gap-3 border-b border-border pb-4 mobile:grid-cols-1">
+          <div className="mb-4 grid grid-cols-4 gap-3 laptop:grid-cols-2">
             <label className="min-w-0 [&>div]:w-full">
               <span className="sr-only">{m.episodes_podcast_filter()}</span>
               <NativeSelect
@@ -370,20 +377,10 @@ export function LatestEpisodesPage({
                 <option value="">{m.episodes_all_time()}</option>
               </NativeSelect>
             </label>
-          </div>
-          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-            <output className="text-muted-foreground" aria-live="polite">
-              {episodes.data &&
-                (filters.term
-                  ? m.episodes_search_count({
-                      count: episodes.data.pages[0].total,
-                      term: filters.term,
-                    })
-                  : m.episodes_count({ count: episodes.data.pages[0].total }))}
-            </output>
-            <label>
+            <label className="min-w-0 [&>div]:w-full">
               <span className="sr-only">{m.episodes_sort()}</span>
               <NativeSelect
+                className="h-12 rounded-lg bg-surface"
                 value={filters.sort}
                 disabled={library.disabled}
                 onChange={(event) =>
@@ -399,6 +396,15 @@ export function LatestEpisodesPage({
               </NativeSelect>
             </label>
           </div>
+          <output className="mb-5 block text-muted-foreground" aria-live="polite">
+            {episodes.data &&
+              (filters.term
+                ? m.episodes_search_count({
+                    count: episodes.data.pages[0].total,
+                    term: filters.term,
+                  })
+                : m.episodes_count({ count: episodes.data.pages[0].total }))}
+          </output>
           {filters.term && episodes.data?.pages[0].semanticUnavailable && (
             <output className="mb-4 block rounded-lg bg-accent p-3 text-sm">
               {m.episodes_semantic_unavailable()}

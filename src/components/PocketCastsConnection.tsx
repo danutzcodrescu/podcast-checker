@@ -38,9 +38,16 @@ export function PocketCastsConnection({ integration }: { integration: PocketCast
   return (
     <div className="mb-5 rounded-xl border border-border bg-surface p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0 wrap-anywhere">
+        <div className="min-w-0 flex-1 wrap-anywhere">
           <h2 className="font-bold">Pocket Casts</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p
+            className={`mt-1 text-xs text-muted-foreground ${connection.data ? 'truncate' : 'leading-relaxed'}`}
+            title={
+              connection.data
+                ? m.pocket_casts_connected({ email: connection.data.email })
+                : undefined
+            }
+          >
             {connection.isPending
               ? m.pocket_casts_loading()
               : connection.data

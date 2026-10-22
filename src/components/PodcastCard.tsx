@@ -7,11 +7,11 @@ import { getPodcastArtworkSrcSet } from '#/lib/podcast-artwork'
 import { m } from '#/paraglide/messages'
 
 const categoryColors = [
-  'bg-blue-100 text-blue-900',
-  'bg-amber-100 text-amber-900',
-  'bg-green-100 text-green-900',
-  'bg-purple-100 text-purple-900',
-  'bg-rose-100 text-rose-900',
+  'bg-blue-50 text-blue-800',
+  'bg-amber-50 text-amber-800',
+  'bg-emerald-50 text-emerald-800',
+  'bg-violet-50 text-violet-800',
+  'bg-rose-50 text-rose-800',
 ]
 const emptyCategories: string[] = []
 
@@ -21,7 +21,7 @@ export function CategoryBadge({ name }: { name: string }) {
     categoryColors.length
   return (
     <span
-      className={`inline-block max-w-full rounded-full px-2.5 py-1 text-xs wrap-anywhere ${categoryColors[color]}`}
+      className={`inline-block max-w-full rounded-full px-3 py-1 text-xs leading-tight wrap-anywhere ${categoryColors[color]}`}
     >
       {name}
     </span>
@@ -66,7 +66,7 @@ export function PodcastCard({
   children?: ReactNode
 }) {
   return (
-    <li className="flex items-center gap-6 rounded-xl border border-card-border bg-surface p-4 pr-5 tablet:grid tablet:grid-cols-[auto_minmax(0,1fr)] tablet:gap-x-4 tablet:gap-y-2 mobile:gap-x-3 mobile:p-3">
+    <li className="flex items-center gap-6 rounded-xl border border-card-border bg-surface p-4 pr-5 shadow-card tablet:grid tablet:grid-cols-[auto_minmax(0,1fr)] tablet:gap-x-4 tablet:gap-y-2 mobile:gap-x-3 mobile:p-3">
       <PodcastArtwork podcast={podcast} />
       <div className="min-w-0 flex-1 wrap-anywhere">
         <h2 className="m-0 text-lg leading-snug font-bold tracking-tight mobile:text-base">
@@ -84,7 +84,7 @@ export function PodcastCard({
         )}
         {children}
       </div>
-      <div className="flex shrink-0 flex-col items-end gap-2 tablet:col-start-2 tablet:items-start mobile:col-span-2 mobile:col-start-1">
+      <div className="flex shrink-0 flex-col items-end gap-2 tablet:col-start-2 tablet:items-start mobile:col-span-2 mobile:col-start-1 mobile:items-stretch">
         {actions}
         <a
           className="inline-flex items-center gap-1.5 text-sm leading-snug text-link no-underline hover:underline hover:underline-offset-4"

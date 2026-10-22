@@ -6,6 +6,7 @@ import type { SubmitEvent, ReactNode } from 'react'
 
 import { Button } from '#/components/ui/Button'
 import { PodcastCard } from '#/components/PodcastCard'
+import { PodcastHero } from '#/components/PodcastHero'
 import type { Podcast } from '#/lib/apple-podcasts'
 import { searchPodcasts } from '#/lib/podcast-search'
 import { m } from '#/paraglide/messages'
@@ -56,60 +57,60 @@ export function PodcastSearch({
 
   return (
     <section aria-labelledby="search-heading">
-      <h1
-        id="search-heading"
-        className="m-0 text-page-title leading-tight font-bold tracking-tight"
+      <PodcastHero
+        headingId="search-heading"
+        eyebrow={m.search_eyebrow()}
+        title={m.search_heading()}
+        description={m.search_subtitle()}
       >
-        {m.search_heading()}
-      </h1>
-      <p className="mt-3 mb-7 text-base text-muted-foreground">{m.search_subtitle()}</p>
-      <search>
-        <form className="flex gap-4 mobile:flex-col mobile:gap-3" onSubmit={submit}>
-          <div className="flex min-w-0 flex-1 items-center gap-4 rounded-lg border border-input bg-white px-4 text-muted-foreground focus-within:outline-3 focus-within:outline-offset-2 focus-within:outline-ring mobile:gap-3 mobile:px-3">
-            <Search className="size-5 shrink-0" aria-hidden="true" />
-            <input
-              className="min-h-12 w-full min-w-0 flex-1 border-0 bg-transparent py-3 text-base text-foreground outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:appearance-none"
-              ref={inputRef}
-              id="podcast-query"
-              type="search"
-              aria-label={m.search_label()}
-              placeholder={m.search_placeholder()}
-              value={term}
-              onChange={(event) => setTerm(event.target.value)}
-              maxLength={200}
-              autoComplete="off"
-              disabled={!hydrated}
-            />
-            {term && (
-              <button
-                type="button"
-                className="grid size-11 shrink-0 place-items-center rounded-md border-0 bg-transparent p-0 text-muted-foreground hover:bg-accent"
-                aria-label={m.search_clear()}
-                onClick={clear}
-              >
-                <X aria-hidden="true" />
-              </button>
-            )}
-          </div>
-          <Button
-            type="submit"
-            className="w-auto min-w-32"
-            disabled={!hydrated || !term.trim() || isFetching}
-          >
-            {isFetching && <LoaderCircle className="size-5 animate-spin" aria-hidden="true" />}
-            {m.search_button()}
-          </Button>
-        </form>
-      </search>
-      <p className="mt-3 mb-7 text-xs text-muted-foreground">{m.search_source()}</p>
+        <search>
+          <form className="flex gap-4 mobile:flex-col mobile:gap-3" onSubmit={submit}>
+            <div className="flex min-w-0 flex-1 items-center gap-4 rounded-lg border border-input bg-white px-4 text-muted-foreground focus-within:outline-3 focus-within:outline-offset-2 focus-within:outline-ring mobile:gap-3 mobile:px-3">
+              <Search className="size-5 shrink-0" aria-hidden="true" />
+              <input
+                className="min-h-12 w-full min-w-0 flex-1 border-0 bg-transparent py-3 text-base text-foreground outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:appearance-none"
+                ref={inputRef}
+                id="podcast-query"
+                type="search"
+                aria-label={m.search_label()}
+                placeholder={m.search_placeholder()}
+                value={term}
+                onChange={(event) => setTerm(event.target.value)}
+                maxLength={200}
+                autoComplete="off"
+                disabled={!hydrated}
+              />
+              {term && (
+                <button
+                  type="button"
+                  className="grid size-11 shrink-0 place-items-center rounded-md border-0 bg-transparent p-0 text-muted-foreground hover:bg-accent"
+                  aria-label={m.search_clear()}
+                  onClick={clear}
+                >
+                  <X aria-hidden="true" />
+                </button>
+              )}
+            </div>
+            <Button
+              type="submit"
+              className="w-auto min-w-32"
+              disabled={!hydrated || !term.trim() || isFetching}
+            >
+              {isFetching && <LoaderCircle className="size-5 animate-spin" aria-hidden="true" />}
+              {m.search_button()}
+            </Button>
+          </form>
+        </search>
+        <p className="mt-2 text-xs text-muted-foreground">{m.search_source()}</p>
+      </PodcastHero>
 
-      <div className="border-t border-border" aria-busy={isFetching}>
+      <div aria-busy={isFetching}>
         <output
           className={
             isFetching
               ? searchStateClassName
               : submittedTerm && !isError && podcasts?.length
-                ? 'mt-6 mb-4 block text-sm font-semibold wrap-anywhere'
+                ? 'mb-4 block text-lg font-bold tracking-tight wrap-anywhere'
                 : 'sr-only'
           }
           aria-live="polite"

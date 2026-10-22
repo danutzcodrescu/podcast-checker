@@ -69,7 +69,7 @@ export function PodcastPageShell({
         </nav>
         <AccountMenu email={email} pending={pending} onSignOut={signOut} />
       </AppHeader>
-      <main className="mx-auto mt-10 max-w-7xl tablet:mt-9">
+      <main className="mx-auto mt-6 max-w-7xl tablet:mt-5">
         {error && (
           <p
             className="mb-6 rounded-lg bg-destructive-soft px-4 py-3 text-sm text-destructive"

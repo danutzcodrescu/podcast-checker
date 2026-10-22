@@ -7,6 +7,7 @@ import { user as users } from '../src/db/auth-schema'
 import { followedPodcast, podcastCategory } from '../src/db/library-schema'
 import { episodeEmbedding, podcastEpisode, podcastFeed } from '../src/db/ingestion-schema'
 import { embeddingDimensions, embeddingModel, preprocessingVersion } from '../src/lib/episode-text'
+import { expandLibrary } from './helpers/library'
 
 async function seedEpisode(feedId: string) {
   const [episode] = await db
@@ -72,6 +73,7 @@ test('persists category edits and unfollowing, with account-isolated libraries a
       .values({ userId: userIds[1], id: 'private', name: 'Private category' })
 
     await page.goto('/discover')
+    await expandLibrary(page)
     const sidebar = page.getByRole('complementary')
     await expect(sidebar.getByRole('button', { name: 'Followed podcasts 1' })).toBeVisible()
     await expect(sidebar.getByText('Private category')).toHaveCount(0)
@@ -116,6 +118,7 @@ test('persists category edits and unfollowing, with account-isolated libraries a
         .where(eq(followedPodcast.userId, userIds[0]))
       expect(saved.categories).toEqual(['development'])
       await page.reload()
+      await expandLibrary(page)
       await sidebar.getByRole('button', { name: 'Followed podcasts 1' }).click()
     }
     /* eslint-enable no-await-in-loop */
@@ -123,6 +126,7 @@ test('persists category edits and unfollowing, with account-isolated libraries a
     const episodeId = await seedEpisode(feed.id)
 
     await page.reload()
+    await expandLibrary(page)
     await sidebar.getByRole('button', { name: 'Development 1' }).click()
     await expect(page.getByRole('heading', { name: 'Development' })).toBeVisible()
     await expect(results.getByRole('heading', { name: podcast.title })).toBeVisible()
@@ -158,6 +162,7 @@ test('persists category edits and unfollowing, with account-isolated libraries a
       await db.select().from(episodeEmbedding).where(eq(episodeEmbedding.episodeId, episodeId)),
     ).toHaveLength(0)
     await page.reload()
+    await expandLibrary(page)
     await expect(sidebar.getByRole('button', { name: 'Followed podcasts 0' })).toBeVisible()
 
     const accountTrigger = page.getByRole('button', { name: 'Account menu' })
@@ -184,6 +189,7 @@ test('persists category edits and unfollowing, with account-isolated libraries a
 
     const otherPage = await otherContext.newPage()
     await otherPage.goto('/')
+    await expandLibrary(otherPage)
     await expect(otherPage.getByRole('button', { name: 'Followed podcasts 1' })).toBeVisible()
     await expect(otherPage.getByRole('button', { name: 'Private category 0' })).toBeVisible()
     await expect(otherPage.getByRole('button', { name: 'Development 0' })).toHaveCount(0)
@@ -233,6 +239,7 @@ test('keeps a shared feed until its last catalog entry is unfollowed, then casca
     )
     const episodeId = await seedEpisode(feedId)
     await page.goto('/discover')
+    await expandLibrary(page)
     const sidebar = page.getByRole('complementary')
     await sidebar.getByRole('button', { name: 'Followed podcasts 2', exact: true }).click()
     const results = page.getByRole('list', { name: 'Followed podcast results' })

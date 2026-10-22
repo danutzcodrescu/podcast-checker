@@ -79,6 +79,26 @@ beforeEach(() => {
 })
 
 describe('podcast library', () => {
+  it('exposes an accessible library disclosure and preserves the selected filter when collapsed', async () => {
+    mocks.load.mockResolvedValue(categorized)
+    const user = userEvent.setup()
+    renderLibrary()
+    const toggle = screen.getByRole('button', { name: 'Your library' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    const content = document.getElementById(toggle.getAttribute('aria-controls')!)
+    expect(content).toHaveClass('tablet:hidden')
+
+    toggle.focus()
+    await user.keyboard('{Enter}')
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(content).not.toHaveClass('tablet:hidden')
+    await user.click(await screen.findByRole('button', { name: 'Development 1' }))
+    await user.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(within(toggle).getByText('Development')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Development' })).toBeInTheDocument()
+  })
+
   it('shows ingestion progress and retries failed imports', async () => {
     const withFeed = { ...podcast, feedUrl: 'https://example.com/rss' }
     const failed: Library = {
