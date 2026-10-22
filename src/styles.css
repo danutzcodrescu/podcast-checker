@@ -35,6 +35,7 @@
   --color-surface: #ffffffeb;
   --color-surface-muted: #f0edff;
   --color-surface-muted-foreground: #6046b1;
+  --color-artwork-development-foreground: #6554ad;
   --color-destructive-soft: #fff0ed;
   --color-primary-hover: #4d26d1;
   --color-primary-disabled: #9b82ed;
@@ -44,11 +45,16 @@
   --spacing-artwork: 7rem;
   --spacing-artwork-mobile: 5rem;
   --text-caption: 0.625rem;
+  --text-banner-title: clamp(1.75rem, 3vw, 2.75rem);
   --text-page-title: clamp(1.5rem, 2.5vw, 2rem);
   --text-hero: clamp(2.5rem, 4.5vw, 4rem);
   --text-hero-compact: clamp(2.25rem, 6vw, 3.5rem);
   --text-hero-localized: clamp(2.25rem, 4vw, 3.5rem);
   --text-intro: clamp(1rem, 1.4vw, 1.25rem);
+  --leading-banner-title: 1.12;
+  --leading-hero: 1.04;
+  --tracking-eyebrow: 0.18em;
+  --tracking-eyebrow-wide: 0.24em;
 }
 
 @layer base {

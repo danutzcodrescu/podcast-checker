@@ -58,7 +58,7 @@ export function AuthPage({ mode, signupEnabled = false }: AuthPageProps) {
           aria-hidden="true"
           width={400}
           height={320}
-          className="pointer-events-none absolute top-40 -right-64 -z-10 w-[28rem] max-w-none -rotate-12 opacity-80 laptop:hidden"
+          className="pointer-events-none absolute top-40 -right-64 -z-10 w-112 max-w-none -rotate-12 opacity-80 laptop:hidden"
         />
         <PodcastShowcase />
         <div className="min-w-0 tablet:row-start-3">

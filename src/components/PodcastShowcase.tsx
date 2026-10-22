@@ -4,7 +4,7 @@ import { cn } from '#/lib/utils'
 import { m } from '#/paraglide/messages'
 
 const artworkStyles = {
-  development: 'text-[#6554ad] bg-[linear-gradient(140deg,#dae4ff,#d4d7f6)]',
+  development: 'text-artwork-development-foreground bg-[linear-gradient(140deg,#dae4ff,#d4d7f6)]',
   history: 'text-[#98746a] bg-[linear-gradient(140deg,#f5e7e0,#e8cfc5)]',
   world: 'text-[#59776d] bg-[linear-gradient(140deg,#e5eee8,#ccdfd4)]',
 }
@@ -46,12 +46,12 @@ export function PodcastShowcase() {
   return (
     <section className="tablet:contents" aria-labelledby="discovery-heading">
       <div className="tablet:row-start-1">
-        <p className="mb-4 text-xs font-semibold tracking-[0.24em] text-primary uppercase">
+        <p className="mb-4 text-xs font-semibold tracking-eyebrow-wide text-primary uppercase">
           {m.discovery_eyebrow()}
         </p>
         <h1
           id="discovery-heading"
-          className="m-0 text-hero leading-[1.04] font-bold tracking-tighter text-heading tablet:text-hero-compact [&:lang(fr)]:text-hero-localized"
+          className="m-0 text-hero leading-hero font-bold tracking-tighter text-heading tablet:text-hero-compact [&:lang(fr)]:text-hero-localized"
         >
           {m.discovery_heading_start()}
           <br />

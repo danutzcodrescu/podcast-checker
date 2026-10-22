@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 
 import { user as users } from '../src/db/auth-schema'
+import { pocketCastsConnection } from '../src/db/pocket-casts-schema'
 import { expect, test } from './fixtures'
 
 test('loads a local font and decorative artwork without third-party font requests', async ({
@@ -86,6 +87,59 @@ test('keeps mobile library controls out of the way, keyboard accessible, and alw
     await expect(toggle).toHaveAttribute('aria-expanded', 'false')
     await expect(librarySearch).toBeHidden()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  } finally {
+    if (userId) await db.delete(users).where(eq(users.id, userId))
+  }
+})
+
+test('keeps the full connected Pocket Casts email readable on narrow French layouts', async ({
+  page,
+  db,
+}) => {
+  let userId = ''
+  const email = 'a.long.pocket.casts.account.address@example.com'
+  try {
+    const response = await page.request.post('/api/auth/sign-up/email', {
+      data: {
+        email: `pocket-layout-${randomUUID()}@example.com`,
+        name: 'Pocket Casts layout test',
+        password: 'test-password-123',
+      },
+    })
+    expect(response.ok()).toBe(true)
+    userId = (await response.json()).user.id
+    await db.insert(pocketCastsConnection).values({
+      userId,
+      email,
+      // Reading connection identity does not decrypt tokens or call Pocket Casts.
+      encryptedTokens: 'unused-by-this-read-only-layout-test',
+    })
+
+    await page.setViewportSize({ width: 320, height: 1000 })
+    await page.goto('/fr/latest-episodes')
+    const identity = page.getByText(`Connecté en tant que ${email}`, { exact: true })
+    await expect(identity).toBeVisible()
+    await page.evaluate(() => document.fonts.ready)
+    const layout = await identity.evaluate((element) => {
+      const bounds = element.getBoundingClientRect()
+      const text = document.createRange()
+      text.selectNodeContents(element)
+      return {
+        left: bounds.left,
+        right: bounds.right,
+        lines: Array.from(text.getClientRects(), (line) => ({
+          left: line.left,
+          right: line.right,
+        })),
+      }
+    })
+    expect(layout.lines.length).toBeGreaterThan(0)
+    for (const line of layout.lines) {
+      expect(line.left).toBeGreaterThanOrEqual(layout.left - 1)
+      expect(line.right).toBeLessThanOrEqual(layout.right + 1)
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await expect(page.getByRole('button', { name: 'Déconnecter', exact: true })).toBeVisible()
   } finally {
     if (userId) await db.delete(users).where(eq(users.id, userId))
   }

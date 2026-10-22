@@ -33,12 +33,12 @@ export function PodcastHero({
         className="pointer-events-none absolute -top-8 -right-10 -z-10 h-64 w-80 max-w-none mobile:-top-4 mobile:-right-12 mobile:h-36 mobile:w-44 mobile:opacity-45"
       />
       <div className="pr-44 mobile:pr-12">
-        <p className="mb-3 text-xs font-semibold tracking-[0.18em] text-accent-foreground uppercase mobile:text-[0.625rem]">
+        <p className="mb-3 text-xs font-semibold tracking-eyebrow text-accent-foreground uppercase mobile:text-caption">
           {eyebrow}
         </p>
         <h1
           id={headingId}
-          className="max-w-xl text-[clamp(1.75rem,3vw,2.75rem)] leading-[1.12] font-bold tracking-tight text-heading"
+          className="max-w-xl text-banner-title leading-banner-title font-bold tracking-tight text-heading"
         >
           {title}
         </h1>
