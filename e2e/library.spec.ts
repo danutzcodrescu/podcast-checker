@@ -190,6 +190,11 @@ test('persists category edits and unfollowing, with account-isolated libraries a
 
     const otherPage = await otherContext.newPage()
     await otherPage.goto('/')
+    await expect(otherPage).toHaveURL('/chat')
+    await otherPage.getByRole('link', { name: 'Latest episodes', exact: true }).click()
+    await expect(
+      otherPage.getByRole('heading', { name: 'Latest episodes', exact: true }),
+    ).toBeVisible()
     await expandLibrary(otherPage)
     await expect(otherPage.getByRole('button', { name: 'Followed podcasts 1' })).toBeVisible()
     await expect(otherPage.getByRole('button', { name: 'Private category 0' })).toBeVisible()

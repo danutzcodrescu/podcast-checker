@@ -27,6 +27,63 @@ afterEach(() => {
 })
 
 describe('query embedding reuse', () => {
+  it('does not start an embedding for an already cancelled consumer', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    await expect(embedEpisodeQuery('already stopped', controller.signal)).rejects.toBe(
+      controller.signal.reason,
+    )
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('aborts an in-flight embedding when its last consumer leaves and permits retry', async () => {
+    let upstreamSignal: AbortSignal | undefined
+    fetchMock.mockImplementationOnce(
+      (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          upstreamSignal = init.signal
+          upstreamSignal?.addEventListener('abort', () => reject(upstreamSignal?.reason), {
+            once: true,
+          })
+        }),
+    )
+    const controller = new AbortController()
+    const reason = new DOMException('Listener stopped', 'AbortError')
+    const pending = expect(embedEpisodeQuery('stop lone consumer', controller.signal)).rejects.toBe(
+      reason,
+    )
+    controller.abort(reason)
+    await pending
+    expect(upstreamSignal?.aborted).toBe(true)
+    expect(await embedEpisodeQuery('stop lone consumer')).toEqual(vector(1))
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('isolates cancellation between consumers of the same in-flight embedding', async () => {
+    let finish!: (value: Response) => void
+    let upstreamSignal: AbortSignal | undefined
+    fetchMock.mockImplementationOnce((_url, init) => {
+      upstreamSignal = init.signal
+      return new Promise<Response>((resolve) => {
+        finish = resolve
+      })
+    })
+    const first = new AbortController()
+    const second = new AbortController()
+    const reason = new DOMException('Listener stopped', 'AbortError')
+    const cancelled = expect(
+      embedEpisodeQuery('shared consumer isolation', first.signal),
+    ).rejects.toBe(reason)
+    const remaining = embedEpisodeQuery('shared consumer isolation', second.signal)
+    first.abort(reason)
+    await cancelled
+    expect(upstreamSignal?.aborted).toBe(false)
+    finish(response(2))
+    expect(await remaining).toEqual(vector(2))
+    expect(await embedEpisodeQuery('shared consumer isolation')).toEqual(vector(2))
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
   it('deduplicates concurrent requests and reuses vectors until the cache expires', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     const result = await Promise.all([

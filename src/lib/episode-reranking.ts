@@ -6,6 +6,7 @@ import {
   scoreEpisodeDocuments,
 } from '#/lib/episode-reranking-provider'
 import { getLogger } from '#/lib/logger'
+import { runWithAbort } from '#/lib/abort'
 
 export const rerankingCandidateLimit = 50
 export const rerankingTimeoutMs = 8_000
@@ -38,7 +39,12 @@ export function episodeRankingDocument(episode: RerankingCandidate) {
   return new TextDecoder().decode(Buffer.from(text).subarray(0, 6_000), { stream: true })
 }
 
-export async function rerankEpisodes(query: string, candidates: RerankingCandidate[]) {
+export async function rerankEpisodes(
+  query: string,
+  candidates: RerankingCandidate[],
+  signal?: AbortSignal,
+) {
+  signal?.throwIfAborted()
   const config = rerankingConfiguration()
   const startedAt = Date.now()
   const baseline = candidates.map(({ id }) => id)
@@ -49,13 +55,18 @@ export async function rerankEpisodes(query: string, candidates: RerankingCandida
   if (!config.enabled) return result('disabled')
   if (candidates.length < 2) return result('skipped')
   try {
-    const { scores, cost } = await scoreEpisodeDocuments(
-      query,
-      candidates.map(episodeRankingDocument),
-      config.model,
-      process.env.OPENROUTER_API_KEY!,
-      AbortSignal.timeout(rerankingTimeoutMs),
+    const timeout = AbortSignal.timeout(rerankingTimeoutMs)
+    const requestSignal = signal ? AbortSignal.any([signal, timeout]) : timeout
+    const { scores, cost } = await runWithAbort(signal, () =>
+      scoreEpisodeDocuments(
+        query,
+        candidates.map(episodeRankingDocument),
+        config.model,
+        process.env.OPENROUTER_API_KEY!,
+        requestSignal,
+      ),
     )
+    signal?.throwIfAborted()
     if (scores.length !== candidates.length || scores.some((score) => !Number.isFinite(score))) {
       throw new Error('Invalid episode relevance scores')
     }
@@ -69,6 +80,7 @@ export async function rerankEpisodes(query: string, candidates: RerankingCandida
     )
     return ranked
   } catch (error) {
+    signal?.throwIfAborted()
     // Never log upstream bodies, query text, descriptions, or fetch errors containing payloads.
     const fallback = result('fallback')
     getLogger().warn(

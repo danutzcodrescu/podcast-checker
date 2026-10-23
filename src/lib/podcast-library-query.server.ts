@@ -5,8 +5,10 @@ import { followedPodcast, podcastCategory } from '#/db/library-schema'
 import { episodeEmbedding, podcastEpisode, podcastFeed } from '#/db/ingestion-schema'
 import type { Podcast } from '#/lib/apple-podcasts'
 import type { PodcastSync } from '#/lib/podcast-sync'
+import { runEpisodeSearchQuery } from '#/lib/episode-search-database.server'
 
-export async function readPodcastLibrary(userId: string) {
+export async function readPodcastLibrary(userId: string, signal?: AbortSignal) {
+  signal?.throwIfAborted()
   const counts = db
     .select({
       feedId: podcastEpisode.feedId,
@@ -25,31 +27,33 @@ export async function readPodcastLibrary(userId: string) {
     )
     .groupBy(podcastEpisode.feedId)
     .as('episode_counts')
-  const [rows, categories] = await Promise.all([
-    db
-      .select({
-        podcast: followedPodcast.podcast,
-        categories: followedPodcast.categories,
-        feed: {
-          id: podcastFeed.id,
-          status: podcastFeed.status,
-          lastSyncedAt: podcastFeed.lastSyncedAt,
-        },
-        episodes: counts.episodes,
-        embedded: counts.embedded,
-        failed: counts.failed,
-      })
-      .from(followedPodcast)
-      .leftJoin(podcastFeed, eq(podcastFeed.id, followedPodcast.feedId))
-      .leftJoin(counts, eq(counts.feedId, podcastFeed.id))
-      .where(eq(followedPodcast.userId, userId))
-      .orderBy(desc(followedPodcast.followedAt), asc(followedPodcast.podcastId)),
-    db
-      .select({ id: podcastCategory.id, name: podcastCategory.name })
-      .from(podcastCategory)
-      .where(eq(podcastCategory.userId, userId))
-      .orderBy(asc(podcastCategory.name)),
-  ])
+  const [rows, categories] = await runEpisodeSearchQuery(signal, (connection) =>
+    Promise.all([
+      connection
+        .select({
+          podcast: followedPodcast.podcast,
+          categories: followedPodcast.categories,
+          feed: {
+            id: podcastFeed.id,
+            status: podcastFeed.status,
+            lastSyncedAt: podcastFeed.lastSyncedAt,
+          },
+          episodes: counts.episodes,
+          embedded: counts.embedded,
+          failed: counts.failed,
+        })
+        .from(followedPodcast)
+        .leftJoin(podcastFeed, eq(podcastFeed.id, followedPodcast.feedId))
+        .leftJoin(counts, eq(counts.feedId, podcastFeed.id))
+        .where(eq(followedPodcast.userId, userId))
+        .orderBy(desc(followedPodcast.followedAt), asc(followedPodcast.podcastId)),
+      connection
+        .select({ id: podcastCategory.id, name: podcastCategory.name })
+        .from(podcastCategory)
+        .where(eq(podcastCategory.userId, userId))
+        .orderBy(asc(podcastCategory.name)),
+    ]),
+  )
   const podcasts: { podcast: Podcast; categories: string[]; sync?: PodcastSync | null }[] =
     rows.map((row) => ({
       podcast: row.podcast,

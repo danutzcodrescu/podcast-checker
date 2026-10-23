@@ -43,6 +43,7 @@
   --shadow-elevated: 0 12px 48px #5533bb0d;
   --container-page: 90rem;
   --spacing-artwork: 7rem;
+  --spacing-artwork-chat: 6rem;
   --spacing-artwork-mobile: 5rem;
   --text-caption: 0.625rem;
   --text-banner-title: clamp(1.75rem, 3vw, 2.75rem);

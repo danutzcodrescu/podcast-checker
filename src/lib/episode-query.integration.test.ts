@@ -194,6 +194,58 @@ describe.runIf(database.enabled)('database-backed episode search', () => {
     expect(mocks.embed).not.toHaveBeenCalled()
   })
 
+  it.each(['embedding', 'reranking'])(
+    'cancels during %s without saving fallback search snapshots',
+    async (stage) => {
+      const controller = new AbortController()
+      let providerSignal: AbortSignal | undefined
+      const pendingProvider = (signal: AbortSignal) => {
+        providerSignal = signal
+        return new Promise((_resolve, reject) =>
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true }),
+        )
+      }
+      if (stage === 'embedding')
+        mocks.embed.mockImplementation((_term, signal: AbortSignal) => pendingProvider(signal))
+      else
+        mocks.score.mockImplementation((_term, _documents, _model, _key, signal: AbortSignal) =>
+          pendingProvider(signal),
+        )
+      const reason = new DOMException('Listener stopped', 'AbortError')
+      const pending = expect(
+        queries.readLatestEpisodes(userId, baseInput, controller.signal),
+      ).rejects.toBe(reason)
+      await vi.waitFor(() => expect(providerSignal).toBeDefined())
+      controller.abort(reason)
+      await pending
+      expect(providerSignal?.aborted).toBe(true)
+      expect(
+        await db.select().from(episodeSearchSession).where(eq(episodeSearchSession.userId, userId)),
+      ).toEqual([])
+      if (stage === 'embedding') expect(mocks.score).not.toHaveBeenCalled()
+    },
+  )
+
+  it('supports signalled snapshot creation, reuse and live browsing without changing search results', async () => {
+    const signal = new AbortController().signal
+    const created = await queries.readLatestEpisodes(userId, baseInput, signal)
+    expect(created.total).toBe(5)
+    expect(created.ranking?.status).toBe('applied')
+    const reused = await queries.readLatestEpisodes(
+      userId,
+      { ...baseInput, searchSessionId: created.searchSessionId! },
+      signal,
+    )
+    expect(reused.episodes).toEqual(created.episodes)
+    expect(mocks.score).toHaveBeenCalledOnce()
+    const live = await queries.readLatestEpisodes(userId, { ...baseInput, sort: 'newest' }, signal)
+    expect(live.total).toBe(5)
+    expect(live.searchSessionId).toBeNull()
+    const { readPodcastLibrary } = await import('./podcast-library-query.server')
+    const library = await readPodcastLibrary(userId, signal)
+    expect(new Set(library.podcasts.map(({ podcast }) => podcast.id))).toEqual(new Set([1, 2, 4]))
+  })
+
   it('ranks compatible ready embeddings by cosine similarity and excludes unrelated or private episodes', async () => {
     const result = await queries.readLatestEpisodes(userId, {
       ...baseInput,
@@ -206,7 +258,7 @@ describe.runIf(database.enabled)('database-backed episode search', () => {
       'Reservoir design',
     ])
     expect(result.episodes.every((item) => item.matchType === 'semantic')).toBe(true)
-    expect(mocks.embed).toHaveBeenCalledWith(term)
+    expect(mocks.embed).toHaveBeenCalledWith(term, undefined)
   })
 
   it('combines text and semantic matches and applies podcast, category and date filters', async () => {

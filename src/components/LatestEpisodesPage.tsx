@@ -1,20 +1,19 @@
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Check, ChevronDown, ListPlus, LoaderCircle, RefreshCw } from 'lucide-react'
+import { ChevronDown, LoaderCircle, RefreshCw } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
-import { CategoryBadge, PodcastArtwork } from '#/components/PodcastCard'
+import { EpisodeCard, episodeDayLabel } from '#/components/EpisodeCard'
 import { EpisodeSearchForm } from '#/components/EpisodeSearchForm'
 import { PodcastHero } from '#/components/PodcastHero'
 import type { PodcastLibraryFilter } from '#/components/PodcastLibrary'
 import { PodcastLibrarySidebar } from '#/components/PodcastLibrarySidebar'
 import { PodcastPageShell } from '#/components/PodcastPageShell'
-import { PocketCastsConnection, pocketCastsErrorMessage } from '#/components/PocketCastsConnection'
+import { PocketCastsConnection } from '#/components/PocketCastsConnection'
 import { Button } from '#/components/ui/Button'
 import { NativeSelect } from '#/components/ui/NativeSelect'
 import { usePodcastLibrary } from '#/hooks/use-podcast-library'
 import { usePocketCasts } from '#/hooks/use-pocket-casts'
-import type { PocketCastsIntegration } from '#/hooks/use-pocket-casts'
 import type { EpisodeFilters, LatestEpisode } from '#/lib/latest-episodes'
 import { episodeScope, latestEpisodesQueryOptions } from '#/lib/episode-queries'
 import { episodeSearchExpired } from '#/lib/episode-search-input'
@@ -25,127 +24,6 @@ export type OnEpisodeFiltersChange = (
   update: (current: EpisodeFilters) => EpisodeFilters,
   options?: { push?: boolean },
 ) => void
-
-function dayLabel(publishedAt: string | null, locale: string, now: number) {
-  if (!publishedAt) return m.episodes_unknown_date()
-  const date = new Date(publishedAt)
-  const today = new Date(now)
-  const yesterday = new Date(today)
-  yesterday.setDate(today.getDate() - 1)
-  if (date.toDateString() === today.toDateString()) return m.episodes_today()
-  if (date.toDateString() === yesterday.toDateString()) return m.episodes_yesterday()
-  return new Intl.DateTimeFormat(locale, { dateStyle: 'long' }).format(date)
-}
-
-function EpisodeCard({
-  episode,
-  categories,
-  now,
-  pocketCasts,
-}: {
-  episode: LatestEpisode
-  categories: string[]
-  now: number
-  pocketCasts: PocketCastsIntegration
-}) {
-  const locale = getLocale()
-  const date = episode.publishedAt ? new Date(episode.publishedAt) : null
-  const hoursAgo = date ? Math.floor((now - date.getTime()) / 3_600_000) : null
-  const recent = hoursAgo !== null && hoursAgo >= 0 && hoursAgo < 24
-  const published =
-    recent && hoursAgo !== null
-      ? new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(-hoursAgo, 'hour')
-      : dayLabel(episode.publishedAt, locale, now)
-  const { connection, queue } = pocketCasts
-  const currentAction = queue.variables === episode.id
-  const queued = currentAction && queue.isSuccess
-
-  return (
-    <li className="flex items-start gap-5 rounded-xl border border-card-border bg-surface p-4 shadow-card mobile:gap-3 mobile:p-3">
-      <PodcastArtwork
-        key={episode.artworkUrl ?? episode.podcast.artworkUrl}
-        podcast={{
-          ...episode.podcast,
-          artworkUrl: episode.artworkUrl ?? episode.podcast.artworkUrl,
-        }}
-      />
-      <div className="min-w-0 flex-1 wrap-anywhere">
-        <div className="mb-1 flex flex-wrap items-center gap-2">
-          <p className="text-sm text-muted-foreground">{episode.podcast.title}</p>
-          {recent && (
-            <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs text-blue-900">
-              {m.episodes_new()}
-            </span>
-          )}
-          {episode.matchType === 'semantic' && (
-            <span className="rounded-full bg-purple-100 px-2.5 py-0.5 text-xs text-purple-900">
-              {m.episodes_semantic_match()}
-            </span>
-          )}
-        </div>
-        <div className="flex items-start justify-between gap-3">
-          <h3 className="min-w-0 flex-1 text-lg leading-snug font-bold tracking-tight mobile:text-base">
-            {episode.title}
-          </h3>
-          <Button
-            variant="outline"
-            size="sm"
-            className="shrink-0 mobile:size-10 mobile:p-0"
-            disabled={!connection.data || queue.isPending}
-            title={!connection.data ? m.pocket_casts_connect_hint() : m.pocket_casts_play_next()}
-            aria-label={m.pocket_casts_play_next_label({ title: episode.title })}
-            onClick={() => queue.mutate(episode.id)}
-          >
-            {currentAction && queue.isPending ? (
-              <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
-            ) : queued ? (
-              <Check className="size-4" aria-hidden="true" />
-            ) : (
-              <ListPlus className="size-4" aria-hidden="true" />
-            )}
-            <span className="mobile:sr-only">
-              {currentAction && queue.isPending
-                ? m.pocket_casts_adding()
-                : m.pocket_casts_play_next()}
-            </span>
-          </Button>
-        </div>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {date ? <time dateTime={episode.publishedAt ?? undefined}>{published}</time> : published}
-          {episode.durationSeconds !== null && episode.durationSeconds > 0 && (
-            <>
-              {' '}
-              ·{' '}
-              {m.episodes_minutes({ count: Math.max(1, Math.round(episode.durationSeconds / 60)) })}
-            </>
-          )}
-        </p>
-        {episode.description && (
-          <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
-            {episode.description}
-          </p>
-        )}
-        {categories.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {categories.map((name) => (
-              <CategoryBadge key={name} name={name} />
-            ))}
-          </div>
-        )}
-        {queued && (
-          <output className="mt-2 block text-sm text-muted-foreground">
-            {m.pocket_casts_added()}
-          </output>
-        )}
-        {currentAction && queue.isError && (
-          <p className="mt-2 text-sm text-destructive" role="alert">
-            {pocketCastsErrorMessage(queue.error)}
-          </p>
-        )}
-      </div>
-    </li>
-  )
-}
 
 export function LatestEpisodesPage({
   email,
@@ -199,7 +77,7 @@ export function LatestEpisodesPage({
         const label =
           filters.term && filters.sort === 'relevance'
             ? m.episodes_search_results()
-            : dayLabel(episode.publishedAt, locale, episodes.dataUpdatedAt)
+            : episodeDayLabel(episode.publishedAt, locale, episodes.dataUpdatedAt)
         const group = result.get(label) ?? []
         group.push(episode)
         result.set(label, group)

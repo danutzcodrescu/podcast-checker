@@ -15,12 +15,14 @@ export function PodcastPageShell({
   email,
   activeTab,
   onDiscover,
+  headerSearch,
   children,
 }: {
   email: string
-  activeTab: 'discover' | 'latest-episodes'
+  activeTab: 'discover' | 'latest-episodes' | 'chat'
   onDiscover?: () => void
   children: ReactNode
+  headerSearch?: ReactNode
 }) {
   const navigate = useNavigate()
   const [{ pending, error }, updateState] = useReducer(
@@ -44,32 +46,58 @@ export function PodcastPageShell({
   }
 
   return (
-    <PageShell>
-      <AppHeader variant="discover">
+    <PageShell
+      className={
+        activeTab === 'chat'
+          ? 'flex h-dvh min-h-0 flex-col pt-0 pb-0 tablet:pt-0 tablet:pb-0'
+          : undefined
+      }
+    >
+      <AppHeader variant={activeTab === 'chat' ? 'chat' : 'discover'}>
         <nav
-          className="flex items-center gap-8 self-stretch tablet:col-span-full tablet:row-start-2 mobile:gap-5"
+          className="flex max-w-full min-w-0 items-center gap-8 self-stretch overflow-x-auto tablet:col-span-full tablet:row-start-2 mobile:gap-3"
           aria-label={m.search_navigation()}
         >
-          {(['discover', 'latest-episodes'] as const).map((tab) => (
+          {(['discover', 'latest-episodes', 'chat'] as const).map((tab) => (
             <Link
               key={tab}
               className={cn(
-                'border-b-3 border-transparent px-1 py-4 text-sm font-semibold no-underline',
+                'shrink-0 border-b-3 border-transparent px-1 py-4 text-sm font-semibold no-underline mobile:text-xs',
                 activeTab === tab
                   ? 'border-primary text-foreground'
                   : 'text-muted-foreground hover:text-foreground',
               )}
-              to={tab === 'discover' ? '/discover' : '/latest-episodes'}
+              to={tab === 'discover' ? '/discover' : tab === 'chat' ? '/chat' : '/latest-episodes'}
               onClick={tab === 'discover' ? onDiscover : undefined}
               aria-current={activeTab === tab ? 'page' : undefined}
             >
-              {tab === 'discover' ? m.search_discover_tab() : m.episodes_heading()}
+              {tab === 'discover'
+                ? m.search_discover_tab()
+                : tab === 'chat'
+                  ? m.chat_tab()
+                  : m.episodes_heading()}
+              {tab === 'chat' && (
+                <span className="ml-2 rounded-full border border-primary/15 bg-accent px-2 py-0.5 text-caption font-semibold text-primary">
+                  BETA
+                </span>
+              )}
             </Link>
           ))}
         </nav>
-        <AccountMenu email={email} pending={pending} onSignOut={signOut} />
+        {headerSearch}
+        <AccountMenu
+          email={email}
+          pending={pending}
+          onSignOut={signOut}
+          avatar={activeTab === 'chat'}
+        />
       </AppHeader>
-      <main className="mx-auto mt-6 max-w-7xl tablet:mt-5">
+      <main
+        className={cn(
+          'mx-auto mt-6 max-w-7xl tablet:mt-5',
+          activeTab === 'chat' && 'mt-0 flex min-h-0 w-full flex-1 flex-col tablet:mt-0',
+        )}
+      >
         {error && (
           <p
             className="mb-6 rounded-lg bg-destructive-soft px-4 py-3 text-sm text-destructive"

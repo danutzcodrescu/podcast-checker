@@ -28,21 +28,35 @@ export function CategoryBadge({ name }: { name: string }) {
   )
 }
 
-export function PodcastArtwork({ podcast, small = false }: { podcast: Podcast; small?: boolean }) {
+export function PodcastArtwork({
+  podcast,
+  small = false,
+  compact = false,
+}: {
+  podcast: Podcast
+  small?: boolean
+  compact?: boolean
+}) {
   const [failed, setFailed] = useState(false)
   return (
     <div
-      className={`grid shrink-0 place-items-center overflow-hidden rounded-lg bg-surface-muted text-surface-muted-foreground ${small ? 'size-16' : 'size-artwork basis-artwork tablet:row-span-2 mobile:row-span-1 mobile:size-artwork-mobile'}`}
+      className={`grid shrink-0 place-items-center overflow-hidden rounded-lg bg-surface-muted text-surface-muted-foreground ${small ? 'size-16' : compact ? 'size-artwork-chat mobile:size-artwork-mobile' : 'size-artwork basis-artwork tablet:row-span-2 mobile:row-span-1 mobile:size-artwork-mobile'}`}
     >
       {podcast.artworkUrl && !failed ? (
         <img
           className="size-full object-cover"
           src={podcast.artworkUrl}
           srcSet={getPodcastArtworkSrcSet(podcast.artworkUrl)}
-          sizes={small ? '64px' : '(max-width: 480px) 80px, 112px'}
+          sizes={
+            small
+              ? '64px'
+              : compact
+                ? '(max-width: 480px) 80px, 96px'
+                : '(max-width: 480px) 80px, 112px'
+          }
           alt=""
-          width={small ? 64 : 112}
-          height={small ? 64 : 112}
+          width={small ? 64 : compact ? 96 : 112}
+          height={small ? 64 : compact ? 96 : 112}
           loading="lazy"
           decoding="async"
           onError={() => setFailed(true)}

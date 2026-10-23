@@ -47,7 +47,7 @@ test('chooses the login landing page and displays only followed episodes with wo
       }),
     )
     await page.goto('/')
-    await expect(page).toHaveURL('/discover')
+    await expect(page).toHaveURL('/chat')
     await page.getByRole('link', { name: 'Latest episodes', exact: true }).click()
     await expect(page).toHaveURL('/latest-episodes')
     await expect(page.getByRole('heading', { name: 'No episodes yet' })).toBeVisible()
@@ -129,6 +129,8 @@ test('chooses the login landing page and displays only followed episodes with wo
     await page.getByLabel('Email address').fill(email)
     await page.getByLabel('Password', { exact: true }).fill(password)
     await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+    await expect(page).toHaveURL('/chat')
+    await page.getByRole('link', { name: 'Latest episodes', exact: true }).click()
     await expect(page).toHaveURL('/latest-episodes')
     await expect(page.getByRole('link', { name: 'Latest episodes', exact: true })).toHaveAttribute(
       'aria-current',
@@ -306,8 +308,13 @@ test('chooses the login landing page and displays only followed episodes with wo
     await expect(page.getByRole('searchbox', { name: 'Rechercher des épisodes' })).toBeVisible()
     await page.getByRole('link', { name: 'Découvrir', exact: true }).click()
     await expect(page).toHaveURL('/fr/discover')
+    // The router updates the URL before WebKit finishes committing the view.
+    // Wait for the destination before starting a competing document navigation.
+    await expect(
+      page.getByRole('searchbox', { name: 'Rechercher des podcasts', exact: true }),
+    ).toBeEnabled()
     await page.goto('/fr/')
-    await expect(page).toHaveURL('/fr/latest-episodes')
+    await expect(page).toHaveURL('/fr/chat')
   } finally {
     await otherContext.close()
     if (userIds.length) await db.delete(users).where(inArray(users.id, userIds))

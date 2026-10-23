@@ -34,10 +34,12 @@ test('protects the home page on direct requests and client navigation', async ({
   expect(response.headers().location).toBe('/signin')
 
   await Promise.all(
-    ['/discover', '/latest-episodes'].map(async (route) => {
+    ['/discover', '/latest-episodes', '/chat', '/fr/chat'].map(async (route) => {
       const protectedResponse = await request.get(route, { maxRedirects: 0 })
       expect(protectedResponse.status()).toBe(307)
-      expect(protectedResponse.headers().location).toBe('/signin')
+      expect(protectedResponse.headers().location).toBe(
+        route.startsWith('/fr/') ? '/fr/signin' : '/signin',
+      )
     }),
   )
 

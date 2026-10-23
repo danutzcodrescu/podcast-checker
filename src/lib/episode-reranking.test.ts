@@ -31,6 +31,34 @@ afterEach(() => {
 })
 
 describe('episode reranking orchestration', () => {
+  it('aborts in-flight reranking without returning or logging baseline fallback results', async () => {
+    let providerSignal: AbortSignal | undefined
+    mocks.score.mockImplementation((_query, _documents, _model, _key, signal: AbortSignal) => {
+      providerSignal = signal
+      return new Promise((_resolve, reject) =>
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true }),
+      )
+    })
+    const controller = new AbortController()
+    const reason = new DOMException('Listener stopped', 'AbortError')
+    const pending = expect(rerankEpisodes('query', candidates, controller.signal)).rejects.toBe(
+      reason,
+    )
+    await vi.waitFor(() => expect(mocks.score).toHaveBeenCalledOnce())
+    controller.abort(reason)
+    await pending
+    expect(providerSignal?.aborted).toBe(true)
+    expect(mocks.warn).not.toHaveBeenCalled()
+    expect(mocks.info).not.toHaveBeenCalled()
+  })
+
+  it('does not call the provider or turn request cancellation into fallback results', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    await expect(rerankEpisodes('query', candidates, controller.signal)).rejects.toThrow()
+    expect(mocks.score).not.toHaveBeenCalled()
+    expect(mocks.warn).not.toHaveBeenCalled()
+  })
   it('sorts by relevance with baseline order as a deterministic tie breaker', async () => {
     const result = await rerankEpisodes('better sleep', candidates)
     expect(result.ids).toEqual(['b', 'c', 'a'])

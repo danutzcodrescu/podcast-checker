@@ -40,13 +40,14 @@ INGESTION_SECRET=replace-with-a-separate-generated-secret-of-at-least-32-charact
 # CLOUDFLARE_ACCOUNT_ID=your-32-character-hex-account-id
 # CLOUDFLARE_API_TOKEN=your-workers-ai-api-token
 
-# Optional: enables automatic podcast categories and episode reranking
+# Optional: enables chat, automatic podcast categories, and episode reranking
 # OPENROUTER_API_KEY=your-openrouter-api-key
 EPISODE_RERANKING_ENABLED=true
 
 # Optional model overrides; omit them to use this branch's defaults
 # PODCAST_CLASSIFICATION_MODEL=~typesafe/jev-latest
 # EPISODE_RERANKING_MODEL=nvidia/llama-nemotron-rerank-vl-1b-v2:free
+# EPISODE_CHAT_MODEL=minimax/minimax-m3.1-flash
 
 # Optional runtime settings
 LOG_LEVEL=info
@@ -57,7 +58,7 @@ AI credentials are optional for the basic app: Apple podcast discovery, followin
 RSS imports, and title/description search do not require them. Without Cloudflare
 credentials, embeddings remain pending and hybrid search falls back to text;
 semantic-only search is unavailable. Without an OpenRouter key, automatic category
-assignment and AI reranking are skipped. The two providers are independent: a text
+assignment and AI reranking are skipped, and chat offers retry/browse feedback. The two providers are independent: a text
 search can still be reranked without Cloudflare, and semantic search can run without
 OpenRouter.
 
@@ -72,7 +73,8 @@ OpenRouter.
 | `BETTER_AUTH_SECRET`           | Required in production and for Pocket Casts token encryption   | Stable random secret of at least 32 characters. Keep it across restarts and deployments; changing it requires reconnecting Pocket Casts.                                                                        |
 | `CLOUDFLARE_ACCOUNT_ID`        | Embeddings and semantic search                                 | Exactly 32 hexadecimal characters. Use together with `CLOUDFLARE_API_TOKEN`.                                                                                                                                    |
 | `CLOUDFLARE_API_TOKEN`         | Embeddings and semantic search                                 | Workers AI Read and Edit access to the configured account. Used by background ingestion and query embedding.                                                                                                    |
-| `OPENROUTER_API_KEY`           | Automatic podcast categories and episode reranking             | Shared server-side key for both features. Setting it can enable paid Jev category classification even when the episode reranker is free.                                                                        |
+| `OPENROUTER_API_KEY`           | Chat, automatic podcast categories and episode reranking       | Shared server-side key. Setting it can enable paid chat and Jev category classification even when the episode reranker is free.                                                                                 |
+| `EPISODE_CHAT_MODEL`           | Optional; `minimax/minimax-m3.1-flash`                         | Function-calling OpenRouter chat model. Separate from classification and reranking; no silent model fallback.                                                                                                   |
 | `PODCAST_CLASSIFICATION_MODEL` | Optional; `~typesafe/jev-latest`                               | Podcast-category classification only. Must support OpenRouter's Decisions API, not chat completions or the rerank endpoint.                                                                                     |
 | `EPISODE_RERANKING_ENABLED`    | Optional; enabled when an OpenRouter key is present            | Set the literal string `false` to disable reranking. `true` does not bypass the API-key requirement. Disabling this does not disable podcast classification.                                                    |
 | `EPISODE_RERANKING_MODEL`      | Optional; branch-specific default below                        | Episode search only. The model must match the adapter in the branch you are running.                                                                                                                            |
@@ -350,7 +352,7 @@ emulation, including checks for logo rendering and delivery of browser icons.
 
 - `/discover` and `/latest-episodes` are authenticated pages; anonymous visitors go to `/signin`.
 - Successful sign-in or sign-up navigates through `/`, which redirects to
-  `/latest-episodes` when the account follows any podcasts, and `/discover` otherwise.
+  `/chat` for all accounts. Empty libraries link to Discover from chat.
   Sign-out navigates to `/signin`.
 - English is the default locale. French routes use the `/fr` prefix, and the
   language dropdown below the form preserves the current page when switching locales.
@@ -526,10 +528,9 @@ podcast/tag filters and date range with ingestion paused for a controlled compar
 Model/version-scoped snapshots prevent one ranker from reusing the other's results.
 Check the ranking banner rather than assuming a successful search used AI ranking.
 
-## Conversational episode search (planned)
+## Conversational episode search
 
-These are agreed design decisions, not implemented functionality. Chat will become
-the default authenticated landing page, while **Latest episodes** remains available
+`/chat` is the default authenticated landing page, while **Latest episodes** remains available
 for full browsing. An empty library links to **Discover** without searching the
 public podcast catalog from chat.
 
@@ -582,18 +583,64 @@ public podcast catalog from chat.
 
 ### Model, safeguards, and validation
 
-Use TanStack AI's OpenRouter adapter with configurable model selection, defaulting
+Set `OPENROUTER_API_KEY` before using chat; chat adds no database migrations. TanStack AI's
+OpenRouter adapter uses `EPISODE_CHAT_MODEL` for configurable model selection, defaulting
 to paid `minimax/minimax-m3.1-flash`. Do not depend on the temporary `:free`
 variant. On provider failure, offer retry and browsing instead of silently
 switching models. The chat model setting is separate from category classification
-and episode reranking; configuration wiring is part of the future implementation.
+and episode reranking. The model must support function calling. Requests use low
+reasoning effort and a 2,048-token completion ceiling; there is no automatic
+model/provider fallback or application-level retry of paid inference. To compare
+DeepSeek, explicitly set `EPISODE_CHAT_MODEL=deepseek/deepseek-v4.1-flash-1017`.
+Changing the model does not establish its interpretation accuracy: evaluate the
+configured model/provider on real supported and unsupported requests before rollout.
+
+The UI follows the conversation/card mockup with a responsive header, right-aligned
+listener bubbles, compact episode cards, a sticky composer without suggestion chips
+or a footer disclaimer, a stop control, and a **+** control that starts a new conversation. Search
+settings explain supported filters and contain the Pocket Casts connection UI.
+The app does not save chat history, but OpenRouter and its upstream provider receive
+the request and necessary library context; their retention policies still apply.
 
 Expose purpose-built authenticated read-only tools over the existing library and
 episode-search services, not every server function. Derive listener identity from
 the server session, enforce followed-podcast access, validate tool inputs/outputs,
 and cap displayed results server-side. Protect the streaming endpoint against CSRF,
-bound model/tool execution and request rates, and keep provider keys server-only.
+bound model/tool execution, and keep provider keys server-only.
 Do not log raw conversations, search text, episode descriptions, or credentials.
+
+`src/lib/episode-chat.server.ts` owns the same-origin authenticated POST stream at
+`/api/chat`, bounded request/history parsing, provider configuration, and a
+45-second chat deadline. Each response makes at most one chat-model inference request and
+executes at most one read-only search/correction tool; extra parallel tool calls
+are ignored. Retrieval can still make its existing embedding/reranking provider calls.
+Only validated tool output becomes cards or assistant messages, not
+free-form model claims. `src/lib/episode-chat-search.server.ts` rechecks current
+library access and reuses existing retrieval/ranking services. `EpisodeCard` is
+shared with Latest episodes; explicit card actions use the existing authorized
+Pocket Casts API, never model tools.
+
+Stop, client disconnection, and the 45-second deadline propagate cancellation to
+library reads, retrieval, snapshot operations, embedding, and reranking. Cancelling
+a search does not turn it into baseline fallback results or save a fallback snapshot.
+Concurrent consumers can share a query embedding: stopping one consumer leaves the
+others running; when the last consumer leaves, the upstream request is aborted and
+the unfinished cache entry is evicted so a retry starts fresh.
+
+Signalled database operations pin a backend inside a transaction. A separate,
+short-lived connection issues `pg_cancel_backend` even if the ordinary pool is full;
+cancelled writes roll back. The transaction retains its backend until cancellation
+finishes so a late cancellation cannot target the next pool user. If that connection
+fails, the ordinary database statement timeout remains the safety bound. No schema
+changes are needed. Stream delivery has a separate cancellation controller so a
+deadline can still send a terminal `CHAT_TIMEOUT` error before closing. The UI shows
+localized timeout feedback with **Try again** and **Latest episodes** actions; a
+timeout before streaming returns HTTP 504 with the same recovery controls.
+
+Chat has no application-level per-listener request quota or associated database
+table. Configure spending limits in OpenRouter as needed. Request bodies are
+limited to 256,000 bytes; prompts to 2,000 characters, and conversation user/assistant
+text to 12,000 characters. When context is full, start a new conversation with **+**.
 
 Design for an inexpensive model: explicit supported capabilities, schema validation,
 and focused request-interpretation tests. Schema validation cannot detect every
@@ -604,6 +651,16 @@ Acceptance coverage should include supported filters and follow-up refinements,
 unsupported requests without partial execution, listener isolation, empty libraries,
 the ten-result cap, manual card actions, provider failures, and **See more**
 preserving all effective criteria, especially explicit and default timeframes.
+
+`pnpm test` covers the real chat-client/SSE renderer, the TanStack/OpenRouter tool
+pipeline with a scripted provider, interpretation-schema boundaries, and read-only
+search guards, in-flight provider cancellation, shared-embedding isolation, and
+timeout retry/browse recovery without paid API calls. Run
+`PODCAST_TEST_CONTAINERS=true pnpm exec vitest run src/lib/episode-query.integration.test.ts src/lib/episode-search-database.integration.test.ts`
+for disposable-Postgres coverage of statement cancellation, rollback, backend reuse,
+and search-snapshot cancellation.
+`pnpm exec playwright test e2e/chat.spec.ts` checks authentication, landing, streamed
+cards, timeframe navigation, and responsive layout in the configured browsers.
 
 ## Background RSS ingestion and episode embeddings
 
@@ -915,48 +972,6 @@ If you prefer not to use Tailwind CSS:
 2. Replace the Tailwind import in `src/styles.css` with your own styles
 3. Remove `tailwindcss()` from the plugins array in `vite.config.ts`
 4. Remove `@tailwindcss/vite` and `tailwindcss` from `package.json`
-
-# TanStack Chat Application
-
-Am example chat application built with TanStack Start, TanStack Store, and Claude AI.
-
-## .env Updates
-
-```env
-ANTHROPIC_API_KEY=your_anthropic_api_key
-```
-
-## ✨ Features
-
-### AI Capabilities
-
-- 🤖 Powered by Claude 3.5 Sonnet
-- 📝 Rich markdown formatting with syntax highlighting
-- 🎯 Customizable system prompts for tailored AI behavior
-- 🔄 Real-time message updates and streaming responses (coming soon)
-
-### User Experience
-
-- 🎨 Modern UI with Tailwind CSS and Lucide icons
-- 🔍 Conversation management and history
-- 🔐 Secure API key management
-- 📋 Markdown rendering with code highlighting
-
-### Technical Features
-
-- 📦 Centralized state management with TanStack Store
-- 🔌 Extensible architecture for multiple AI providers
-- 🛠️ TypeScript for type safety
-
-## Architecture
-
-### Tech Stack
-
-- **Frontend Framework**: TanStack Start
-- **Routing**: TanStack Router
-- **State Management**: TanStack Store
-- **Styling**: Tailwind CSS
-- **AI Integration**: Anthropic's Claude API
 
 ## Paraglide i18n
 

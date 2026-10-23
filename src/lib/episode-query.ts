@@ -5,12 +5,18 @@ import { readEpisodeSearchSnapshot } from './episode-search-snapshot.server'
 export { episodesInput } from '#/lib/episode-search-input'
 export type { EpisodeFilters, EpisodeSearchMode } from '#/lib/episode-search-input'
 
-export async function readLatestEpisodes(userId: string, data: EpisodeSearchInput) {
+export async function readLatestEpisodes(
+  userId: string,
+  data: EpisodeSearchInput,
+  signal?: AbortSignal,
+) {
+  signal?.throwIfAborted()
   const searching = Boolean(data.term)
   const result =
     searching && data.sort === 'relevance'
-      ? await readEpisodeSearchSnapshot(userId, data)
-      : await createEpisodeRetrieval(userId, data).readPage()
+      ? await readEpisodeSearchSnapshot(userId, data, signal)
+      : await createEpisodeRetrieval(userId, data, signal).readPage()
+  signal?.throwIfAborted()
 
   return {
     ...result,
