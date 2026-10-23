@@ -183,6 +183,13 @@ export function createEpisodeChatDiagnostics(model: string) {
         unsupportedConstraints: argumentType(input, 'unsupportedConstraints'),
       }
     },
+    repaired(repairs: string[]) {
+      // Repair names are fixed labels (field + shape), never model values.
+      log.info(
+        { event: 'chat.arguments_repaired', repairs, ...fields() },
+        'Episode chat tool arguments repaired',
+      )
+    },
     stage(next: ChatStage) {
       stage = next
       if (!terminal) log.info({ event: 'chat.stage', ...fields() }, 'Episode chat stage started')

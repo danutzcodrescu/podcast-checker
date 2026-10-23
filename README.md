@@ -557,10 +557,13 @@ public podcast catalog from chat.
   30 minutes", or run a partial search. Do not broaden a timeframe automatically.
 - Tool calls require an explicit `action` and complete valid filters. Correction
   metadata (`clarification` and `unsupportedConstraints`) can be empty, omitted,
-  or `null` when absent; models do not always emit empty strings/arrays. A
-  `clarify` action still never searches, even without a question, and any supplied
-  correction question or unsupported-constraint list still blocks search. This
-  compatibility applies only to absent metadata, not malformed types or filters.
+  `null`, or an empty object when absent; models/providers do not always emit empty
+  strings/arrays. Repair normalizes only these two fields before validation and
+  logs `chat.arguments_repaired`. Non-empty objects keep their meaning: text leaves
+  become the correction question or unsupported-constraint entries, and a
+  non-textual constraint object still blocks search instead of being dropped. A
+  `clarify` action never searches, even without a question. Malformed types,
+  actions, and filters are not repaired and still fail validation.
 - Keep context for follow-ups such as "same topic, but the last 30 days" while
   the chat page is open. Do not persist conversations in browser storage or the
   database; a reload starts fresh. No long-term preference profile is maintained.
@@ -665,8 +668,10 @@ streaming so late provider/tool failures retain the same request context.
   or network cause codes), `errorLocations`, and allowlisted `validationIssues`
   paths for malformed model arguments. Values and validation messages are omitted.
   `argumentTypes` records only whether the two correction fields were missing,
-  null, strings, arrays, or another type; issue codes distinguish invalid types
-  from length/value errors without exposing the model's arguments.
+  null, strings, arrays, objects, or another type; issue codes distinguish invalid
+  types from length/value errors without exposing the model's arguments. A
+  `chat.arguments_repaired` event lists fixed labels such as
+  `clarification:empty-object`, never field values.
 - `reason=deadline_exceeded`: the application reached its 45-second deadline.
   If logs stop at `chat.stage`/`chat.provider_response` with no terminal chat event,
   inspect Netlify's invocation timeout/termination logs and the browser network

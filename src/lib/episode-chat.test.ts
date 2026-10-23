@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { episodeChatDecision, episodeChatSearchParams, readEpisodeChatResult } from './episode-chat'
+import {
+  episodeChatDecision,
+  episodeChatSearchParams,
+  readEpisodeChatResult,
+  repairEpisodeChatToolInput,
+} from './episode-chat'
 import { parseEpisodeChatRequest } from './episode-chat-request'
 import { chatDecision, chatResults } from '#/test/episode-chat-fixtures'
 
@@ -86,5 +91,78 @@ describe('episode chat contract', () => {
       [{ role: 'user', content: '  ' }],
     ])
       expect(() => parseEpisodeChatRequest({ messages })).toThrow()
+  })
+})
+
+describe('episode chat tool input repair', () => {
+  const base = { action: chatDecision.action, filters: chatDecision.filters }
+
+  it('treats empty-object metadata as absent', () => {
+    expect(
+      repairEpisodeChatToolInput({
+        ...chatDecision,
+        clarification: {},
+        unsupportedConstraints: {},
+      }),
+    ).toEqual({
+      input: base,
+      repairs: ['clarification:empty-object', 'unsupportedConstraints:empty-object'],
+    })
+  })
+
+  it('treats null metadata as absent', () => {
+    expect(
+      repairEpisodeChatToolInput({
+        ...chatDecision,
+        clarification: null,
+        unsupportedConstraints: null,
+      }),
+    ).toEqual({
+      input: base,
+      repairs: ['clarification:null', 'unsupportedConstraints:null'],
+    })
+  })
+
+  it('keeps text and constraints from object-shaped metadata', () => {
+    expect(
+      repairEpisodeChatToolInput({
+        ...chatDecision,
+        clarification: { question: 'Which show did you mean?' },
+        unsupportedConstraints: { duration: 'under 30 minutes' },
+      }),
+    ).toEqual({
+      input: {
+        ...base,
+        clarification: 'Which show did you mean?',
+        unsupportedConstraints: ['under 30 minutes'],
+      },
+      repairs: ['clarification:object', 'unsupportedConstraints:object'],
+    })
+  })
+
+  it('keeps a non-textual constraint object blocking instead of dropping it', () => {
+    expect(
+      repairEpisodeChatToolInput({
+        ...chatDecision,
+        clarification: {},
+        unsupportedConstraints: { duration: true },
+      })?.input.unsupportedConstraints,
+    ).toEqual(['unsupported constraint'])
+  })
+
+  it('does not repair valid or malformed values, filters, or actions', () => {
+    expect(repairEpisodeChatToolInput(chatDecision)).toBeNull()
+    expect(repairEpisodeChatToolInput({ ...chatDecision, clarification: false })).toBeNull()
+    expect(
+      repairEpisodeChatToolInput({ ...chatDecision, unsupportedConstraints: 'none' }),
+    ).toBeNull()
+    expect(repairEpisodeChatToolInput({ ...chatDecision, action: 'browse' })).toBeNull()
+    expect(
+      repairEpisodeChatToolInput({
+        ...chatDecision,
+        filters: { ...chatDecision.filters, days: 14 },
+      }),
+    ).toBeNull()
+    expect(repairEpisodeChatToolInput(null)).toBeNull()
   })
 })

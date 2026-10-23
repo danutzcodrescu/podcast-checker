@@ -122,6 +122,61 @@ describe('authenticated chat streaming boundary', () => {
     expect(logEntries().filter(({ event }) => event === 'chat.failed')).toEqual([])
   })
 
+  it('repairs provider-encoded empty-object metadata and still searches', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      providerStream({
+        action: 'search',
+        filters: chatDecision.filters,
+        clarification: {},
+        unsupportedConstraints: {},
+      }),
+    )
+    const events = await (await handleEpisodeChatRequest(request())).text()
+    expect(events).toContain('TOOL_CALL_RESULT')
+    expect(events).toContain('Roman history 1')
+    expect(events).not.toContain('RUN_ERROR')
+    expect(mocks.episodes).toHaveBeenCalledOnce()
+    expect(logEntries()).toContainEqual(
+      expect.objectContaining({
+        event: 'chat.arguments_repaired',
+        repairs: ['clarification:empty-object', 'unsupportedConstraints:empty-object'],
+      }),
+    )
+    expect(logEntries().filter(({ event }) => event === 'chat.failed')).toEqual([])
+  })
+
+  it('keeps object-shaped clarification metadata blocking the search', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      providerStream({
+        action: 'search',
+        filters: chatDecision.filters,
+        clarification: { question: 'Which show did you mean?' },
+        unsupportedConstraints: {},
+      }),
+    )
+    const events = await (await handleEpisodeChatRequest(request())).text()
+    expect(events).toContain('TOOL_CALL_RESULT')
+    expect(events).toContain('clarification')
+    expect(events).not.toContain('RUN_ERROR')
+    expect(mocks.episodes).not.toHaveBeenCalled()
+  })
+
+  it('keeps object-shaped unsupported constraints blocking the search', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      providerStream({
+        action: 'search',
+        filters: chatDecision.filters,
+        clarification: {},
+        unsupportedConstraints: { duration: 'under 30 minutes' },
+      }),
+    )
+    const events = await (await handleEpisodeChatRequest(request())).text()
+    expect(events).toContain('TOOL_CALL_RESULT')
+    expect(events).toContain('clarification')
+    expect(events).not.toContain('RUN_ERROR')
+    expect(mocks.episodes).not.toHaveBeenCalled()
+  })
+
   it.each([
     { action: 'clarify', filters: chatDecision.filters },
     {

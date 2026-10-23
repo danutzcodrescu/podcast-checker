@@ -11,7 +11,11 @@ import { createOpenRouterText } from '@tanstack/ai-openrouter'
 import { auth } from '#/lib/auth'
 import { parseEpisodeChatRequest } from '#/lib/episode-chat-request'
 import { createEpisodeChatSearch } from '#/lib/episode-chat-search.server'
-import { readEpisodeChatResult } from '#/lib/episode-chat'
+import {
+  readEpisodeChatResult,
+  episodeChatToolName,
+  repairEpisodeChatToolInput,
+} from '#/lib/episode-chat'
 import { readPodcastLibrary } from '#/lib/podcast-library-query.server'
 import { createEpisodeChatRun } from '#/lib/episode-chat-stream.server'
 import { createEpisodeChatDiagnostics } from '#/lib/episode-chat-diagnostics.server'
@@ -114,7 +118,7 @@ export async function handleEpisodeChatRequest(request: Request) {
         systemPrompts: [
           `You interpret episode search requests, not general conversation. Respond in ${input.locale === 'fr' ? 'French' : 'English'}.
 Call resolve_episode_search EXACTLY ONCE. Do not answer in free text. Do not invent episodes or recommendations.
-For a supported search, use action="search", clarification="", and unsupportedConstraints=[]. For a correction, use action="clarify" and a short clarification question. Never omit action or the complete filters object.
+For a supported search, use action="search" and the complete filters; omit clarification and unsupportedConstraints, or use "" and []. For a correction, use action="clarify" and a short clarification question. Never omit action or the complete filters object.
 Check the ENTIRE request for unsupported constraints BEFORE searching. action=clarify and list unsupportedConstraints if ANY are unsupported or ambiguous. Never search a supported subset or silently drop/approximate a constraint. Ask a short correction question.
 Supported: one topic query (max 200 characters, used for BOTH keyword and semantic retrieval), one followed podcast ID, one listener category ID (intersection), days=7/30/90/null (null=ALL TIME, DEFAULT), sort=newest/oldest/relevance, searchMode=hybrid/text/semantic (DEFAULT hybrid). Default sort=relevance for a topic, newest without one.
 Supported rolling periods: last week=7, last 30 days=30, last 90 days=90, all time=null. "Recent", calendar months/years, last 14 days, date intervals, duration, language filtering, multiple shows/categories, exclusion filters, and other unrepresentable constraints REQUIRE clarification. Offer 7, 30, 90 days or all time for timeframe corrections. Metadata in returned episodes does not mean it is a supported filter.
@@ -136,6 +140,15 @@ Library data: ${scope}`,
         // SDK debug payloads can contain private input; diagnostics logs an allowlist instead.
         debug: false,
         wrapFetch: diagnostics.wrapFetch,
+        // Some providers encode absent optional metadata as `{}`. Repair only
+        // those fields, then revalidate; malformed filters still fail.
+        repairToolInput: ({ tool: calledTool, input: rawInput }) => {
+          if (calledTool.name !== episodeChatToolName) return undefined
+          const repaired = repairEpisodeChatToolInput(rawInput)
+          if (!repaired) return undefined
+          diagnostics.repaired(repaired.repairs)
+          return repaired.input
+        },
         middleware: [
           defineChatMiddleware({
             name: 'episode-chat-safety',
