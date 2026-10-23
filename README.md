@@ -238,6 +238,9 @@ headers, not consumption of a streaming response body.
   errors are errors. RPC logging is independent of HTTP response status.
 - Ingestion logs include feed/job IDs, batch sizes, skipped runs, and failures.
   Set `LOG_LEVEL=debug` to also see request-start events.
+- Chat logs include model, stage, provider HTTP status, safe error codes/file
+  locations, and terminal `chat.failed`, `chat.completed`, or `chat.cancelled`
+  events. A streaming request's HTTP 200 does not mean the chat succeeded.
 
 Use `getLogger()` from `src/lib/logger.ts` inside server-only code to inherit
 the current async context, and `withLogContext({ feedId }, action)` to add fields:
@@ -636,6 +639,36 @@ changes are needed. Stream delivery has a separate cancellation controller so a
 deadline can still send a terminal `CHAT_TIMEOUT` error before closing. The UI shows
 localized timeout feedback with **Try again** and **Latest episodes** actions; a
 timeout before streaming returns HTTP 504 with the same recovery controls.
+
+### Debugging chat in production
+
+After deploying, reproduce once and open the Netlify **runtime function logs** for
+the web `server` function, not the build log or ingestion functions. Use
+`LOG_LEVEL=info` (Functions scope; redeploy after changing it). In browser DevTools,
+select the `POST /api/chat` request and copy its `x-request-id` response header.
+Search the logs for that `requestId` and `chat.failed`. The logger is captured before
+streaming so late provider/tool failures retain the same request context.
+
+- `stage=configuration`, `reason=missing_openrouter_api_key`: configure the key in
+  the deployed Functions environment.
+- `stage=provider`, `providerStatus=401/403`: check key validity and permissions;
+  `402`: check credits/spending limits; `404`: check `EPISODE_CHAT_MODEL` and model
+  availability; `400`: check model/parameter compatibility; `429`: provider limits;
+  `5xx`: provider failure. These are investigation hints, not guaranteed diagnoses.
+- `stage=search`, `reason=tool_failed`: check `errorCode` (including nested database
+  or network cause codes), `errorLocations`, and allowlisted `validationIssues`
+  paths for malformed model arguments. Values and validation messages are omitted.
+- `reason=deadline_exceeded`: the application reached its 45-second deadline.
+  If logs stop at `chat.stage`/`chat.provider_response` with no terminal chat event,
+  inspect Netlify's invocation timeout/termination logs and the browser network
+  failure; the runtime may have ended before the application could log an error.
+
+`providerStatus=200` can still precede an error inside the provider's SSE stream;
+inspect `errorCode` and the terminal chat event, not just HTTP completion. Error
+logs omit prompts, tool arguments/results, SQL, raw error messages, full stacks,
+provider bodies, and credentials. Do not enable unrestricted SDK `debug: true`
+to troubleshoot private conversations. No additional paid request or retry is
+made for diagnostics.
 
 Chat has no application-level per-listener request quota or associated database
 table. Configure spending limits in OpenRouter as needed. Request bodies are

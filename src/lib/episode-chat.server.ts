@@ -14,6 +14,7 @@ import { createEpisodeChatSearch } from '#/lib/episode-chat-search.server'
 import { readEpisodeChatResult } from '#/lib/episode-chat'
 import { readPodcastLibrary } from '#/lib/podcast-library-query.server'
 import { createEpisodeChatRun } from '#/lib/episode-chat-stream.server'
+import { createEpisodeChatDiagnostics } from '#/lib/episode-chat-diagnostics.server'
 import { m } from '#/paraglide/messages'
 
 const maximumBodyBytes = 256_000
@@ -54,28 +55,41 @@ function failure(status: number) {
 }
 
 export async function handleEpisodeChatRequest(request: Request) {
+  const model = process.env.EPISODE_CHAT_MODEL?.trim() || 'minimax/minimax-m3.1-flash'
+  const diagnostics = createEpisodeChatDiagnostics(model)
+  const reject = (status: number, reason: string) => {
+    diagnostics.reject(status, reason)
+    return failure(status)
+  }
   // This raw streaming route does not pass through the server-function CSRF middleware.
   if (
     request.headers.get('origin') !== new URL(request.url).origin ||
     request.headers.get('sec-fetch-site') === 'cross-site'
   )
-    return failure(403)
+    return reject(403, 'cross_origin')
   if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json'))
-    return failure(415)
+    return reject(415, 'unsupported_content_type')
 
   try {
+    diagnostics.stage('authentication')
     const session = await auth.api.getSession({ headers: request.headers })
-    if (!session) return failure(401)
+    if (!session) return reject(401, 'unauthenticated')
+    diagnostics.stage('input')
     let input: ReturnType<typeof parseEpisodeChatRequest>
     try {
       input = parseEpisodeChatRequest(await readBody(request))
     } catch {
-      return failure(400)
+      return reject(400, 'invalid_request')
     }
+    diagnostics.stage('configuration')
     const apiKey = process.env.OPENROUTER_API_KEY?.trim()
-    if (!apiKey) return failure(503)
-    const run = createEpisodeChatRun(request.signal, input.locale)
+    if (!apiKey) {
+      diagnostics.fail('missing_openrouter_api_key')
+      return failure(503)
+    }
+    const run = createEpisodeChatRun(request.signal, input.locale, diagnostics)
     try {
+      diagnostics.stage('library')
       const library = await readPodcastLibrary(session.user.id, run.signal)
       // Only the metadata necessary to resolve show/category names enters the system context.
       const scope = JSON.stringify({
@@ -84,10 +98,10 @@ export async function handleEpisodeChatRequest(request: Request) {
       })
       if (!library.podcasts.length || scope.length > 30_000) {
         run.dispose()
-        return failure(422)
+        return reject(422, library.podcasts.length ? 'library_context_too_large' : 'empty_library')
       }
       const { tool } = createEpisodeChatSearch(session.user.id, run.signal, input.locale)
-      const model = process.env.EPISODE_CHAT_MODEL?.trim() || 'minimax/minimax-m3.1-flash'
+      diagnostics.stage('provider')
       const configuredOpenRouter = extendAdapter(createOpenRouterText, [
         createModel(model, ['text']),
       ])
@@ -118,7 +132,9 @@ Library data: ${scope}`,
         },
         reasoning: 'low',
         abortController: run.controller,
+        // SDK debug payloads can contain private input; diagnostics logs an allowlist instead.
         debug: false,
+        wrapFetch: diagnostics.wrapFetch,
         middleware: [
           defineChatMiddleware({
             name: 'episode-chat-safety',
@@ -130,26 +146,44 @@ Library data: ${scope}`,
                 chunk.type === 'RAW'
               )
                 return null
-              if (chunk.type === 'RUN_ERROR')
+              if (chunk.type === 'RUN_ERROR') {
+                diagnostics.fail('provider_error', chunk)
                 return {
                   type: EventType.RUN_ERROR,
                   message: m.chat_error({}, { locale: input.locale }),
                   code: 'CHAT_UNAVAILABLE',
                 }
-              if (chunk.type === 'TOOL_CALL_RESULT' && !readEpisodeChatResult(chunk.content)) {
-                throw new Error('Episode search failed')
               }
+              if (chunk.type === 'TOOL_CALL_RESULT') {
+                const result = readEpisodeChatResult(chunk.content)
+                if (!result) {
+                  diagnostics.fail('invalid_tool_result')
+                  throw new Error('Episode search failed')
+                }
+                if (result.kind !== 'ignored') diagnostics.result(result.kind)
+              }
+            },
+            onBeforeToolCall: () => {
+              diagnostics.stage('search')
+            },
+            onAfterToolCall: (_context, info) => {
+              if (!info.ok && !run.signal.aborted) diagnostics.fail('tool_failed', info.error)
+            },
+            onError: (_context, info) => {
+              if (!run.signal.aborted) diagnostics.fail('stream_error', info.error)
             },
           }),
         ],
       })
       return run.respond(stream)
-    } catch {
+    } catch (error) {
       const status = run.timedOut() ? 504 : 503
+      if (!run.signal.aborted) diagnostics.fail('request_failed', error)
       run.dispose()
       return failure(status)
     }
-  } catch {
+  } catch (error) {
+    diagnostics.fail('request_failed', error)
     return failure(503)
   }
 }

@@ -3,6 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { handleEpisodeChatRequest } from './episode-chat.server'
 import { chatDecision, chatLibrary, chatResults } from '#/test/episode-chat-fixtures'
+import { createLogger, logger } from '#/lib/logger'
+import { withRequestLogging } from '#/lib/request-logging'
+
+let logLines: string[]
+const logEntries = () => logLines.map((line) => JSON.parse(line))
 
 const mocks = vi.hoisted(() => ({
   session: vi.fn(),
@@ -67,6 +72,14 @@ function providerStream(argumentsValue: unknown = chatDecision) {
 }
 
 beforeEach(() => {
+  logLines = []
+  vi.stubEnv('LOG_LEVEL', 'info')
+  const captured = createLogger({
+    write: (line) => {
+      logLines.push(line)
+    },
+  })
+  vi.spyOn(logger, 'child').mockImplementation((bindings) => captured.child(bindings))
   vi.stubEnv('OPENROUTER_API_KEY', 'test-not-a-real-key')
   vi.stubEnv('EPISODE_CHAT_MODEL', 'minimax/minimax-m3.1-flash')
   mocks.session.mockResolvedValue({ user: { id: 'listener-a' } })
@@ -82,12 +95,157 @@ beforeEach(() => {
   )
 })
 afterEach(() => {
+  vi.restoreAllMocks()
   vi.useRealTimers()
   vi.unstubAllEnvs()
   vi.unstubAllGlobals()
 })
 
 describe('authenticated chat streaming boundary', () => {
+  it('logs missing configuration instead of silently returning the generic 503', async () => {
+    vi.stubEnv('OPENROUTER_API_KEY', '')
+    const response = await handleEpisodeChatRequest(request())
+    expect(response.status).toBe(503)
+    expect(logEntries()).toContainEqual(
+      expect.objectContaining({
+        level: 'error',
+        event: 'chat.failed',
+        stage: 'configuration',
+        reason: 'missing_openrouter_api_key',
+        model: 'minimax/minimax-m3.1-flash',
+      }),
+    )
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it.each([400, 401, 402, 404, 429, 503])(
+    'logs provider HTTP %s with correlation, without leaking provider payloads',
+    async (status) => {
+      vi.mocked(fetch).mockResolvedValue(
+        Response.json(
+          {
+            error: {
+              code: status,
+              message: 'SECRET provider response with prompt and key',
+              metadata: { raw: 'SECRET metadata' },
+            },
+          },
+          { status },
+        ),
+      )
+      const req = request()
+      const response = await withRequestLogging(req, () => handleEpisodeChatRequest(req))
+      const events = await response.text()
+      const requestId = response.headers.get('x-request-id')
+      expect(requestId).toBeTruthy()
+      expect(events).toContain('RUN_ERROR')
+      expect(events).not.toContain('SECRET')
+      expect(logEntries()).toContainEqual(
+        expect.objectContaining({
+          level: 'error',
+          event: 'chat.failed',
+          stage: 'provider',
+          reason: 'provider_error',
+          providerStatus: status,
+          requestId,
+          model: 'minimax/minimax-m3.1-flash',
+        }),
+      )
+      expect(logLines.join('')).not.toMatch(/SECRET|Find Roman history|test-not-a-real-key/)
+      expect(fetch).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it('logs search failures with their database cause code, never SQL or error messages', async () => {
+    mocks.episodes.mockRejectedValue(
+      Object.assign(new Error('SECRET failed query'), {
+        query: 'SECRET SQL',
+        params: ['SECRET input'],
+        cause: Object.assign(new Error('SECRET DB detail'), { code: '42P01' }),
+      }),
+    )
+    const response = await handleEpisodeChatRequest(request())
+    await response.text()
+    expect(logEntries()).toContainEqual(
+      expect.objectContaining({
+        level: 'error',
+        event: 'chat.failed',
+        stage: 'search',
+        reason: 'tool_failed',
+        errorCode: '42P01',
+      }),
+    )
+    expect(logEntries().filter(({ event }) => event === 'chat.failed')).toHaveLength(1)
+    expect(logLines.join('')).not.toMatch(/SECRET|Find Roman history|test-not-a-real-key/)
+  })
+
+  it('retains safe network cause codes before the provider adapter converts the error', async () => {
+    vi.mocked(fetch).mockRejectedValue(
+      new TypeError('SECRET request URL and credentials', {
+        cause: Object.assign(new Error('SECRET network detail'), { code: 'ENOTFOUND' }),
+      }),
+    )
+    const events = await (await handleEpisodeChatRequest(request())).text()
+    expect(events).toContain('RUN_ERROR')
+    expect(logEntries()).toContainEqual(
+      expect.objectContaining({
+        event: 'chat.failed',
+        stage: 'provider',
+        errorCode: 'ENOTFOUND',
+        errorType: 'TypeError',
+      }),
+    )
+    expect(logLines.join('') + events).not.toContain('SECRET')
+  })
+
+  it('identifies library failures before streaming and keeps only safe application stack locations', async () => {
+    const error = new Error('SECRET database query')
+    error.stack =
+      'Error: SECRET database query\n    at SECRET_FUNCTION (/app/src/lib/podcast-library-query.server.ts:12:3)\n    at SECRET bad metadata\n    at fetch (https://SECRET.example/?key=SECRET:12:3)\n    at fetch (https://SECRET.example/src/SECRET:12:3)'
+    mocks.library.mockRejectedValue(error)
+    const response = await handleEpisodeChatRequest(request())
+    expect(response.status).toBe(503)
+    expect(logEntries()).toContainEqual(
+      expect.objectContaining({
+        event: 'chat.failed',
+        stage: 'library',
+        reason: 'request_failed',
+        errorLocations: ['/app/src/lib/podcast-library-query.server.ts:12:3'],
+      }),
+    )
+    expect(logLines.join('')).not.toContain('SECRET')
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('logs a provider error delivered inside an HTTP 200 stream before sanitizing it', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        `data: ${JSON.stringify({
+          id: 'failed-completion',
+          object: 'chat.completion.chunk',
+          created: 1,
+          model: 'minimax/minimax-m3.1-flash',
+          choices: [],
+          error: { code: 429, message: 'SECRET provider body' },
+        })}\n\n`,
+        {
+          headers: { 'content-type': 'text/event-stream' },
+        },
+      ),
+    )
+    const events = await (await handleEpisodeChatRequest(request())).text()
+    expect(events).toContain('RUN_ERROR')
+    expect(logEntries()).toContainEqual(
+      expect.objectContaining({
+        event: 'chat.failed',
+        reason: 'provider_error',
+        providerStatus: 200,
+        errorCode: '429',
+      }),
+    )
+    expect(logLines.join('') + events).not.toContain('SECRET')
+  })
+
   it('returns HTTP 504 and cancels library work when the deadline expires before streaming', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     let librarySignal: AbortSignal | undefined
@@ -104,6 +262,13 @@ describe('authenticated chat streaming boundary', () => {
     expect((await pending).status).toBe(504)
     expect(librarySignal?.aborted).toBe(true)
     expect(fetch).not.toHaveBeenCalled()
+    expect(logEntries()).toContainEqual(
+      expect.objectContaining({
+        event: 'chat.failed',
+        reason: 'deadline_exceeded',
+        stage: 'library',
+      }),
+    )
   })
 
   it('streams a terminal timeout error while aborting a slow provider request', async () => {
@@ -128,6 +293,13 @@ describe('authenticated chat streaming boundary', () => {
     expect(events).toContain('CHAT_TIMEOUT')
     expect(events).not.toContain('SECRET')
     expect(mocks.episodes).not.toHaveBeenCalled()
+    expect(logEntries()).toContainEqual(
+      expect.objectContaining({
+        event: 'chat.failed',
+        reason: 'deadline_exceeded',
+        stage: 'provider',
+      }),
+    )
   })
 
   it('delivers one terminal timeout error and cancels an in-flight search tool', async () => {
@@ -168,6 +340,10 @@ describe('authenticated chat streaming boundary', () => {
     await response.body?.cancel()
     expect(providerSignal?.aborted).toBe(true)
     expect(mocks.episodes).not.toHaveBeenCalled()
+    expect(logEntries()).toContainEqual(
+      expect.objectContaining({ event: 'chat.cancelled', stage: 'provider' }),
+    )
+    expect(logEntries().filter(({ event }) => event === 'chat.failed')).toHaveLength(0)
   })
 
   it('rejects cross-origin and missing-origin requests before authentication or inference', async () => {
@@ -237,6 +413,13 @@ describe('authenticated chat streaming boundary', () => {
       expect.any(AbortSignal),
     )
     expect(fetch).toHaveBeenCalledTimes(1)
+    expect(logEntries()).toContainEqual(
+      expect.objectContaining({
+        event: 'chat.completed',
+        resultKind: 'results',
+        providerStatus: 200,
+      }),
+    )
   })
 
   it('streams correction without executing any search when constraints are unsupported', async () => {
@@ -270,5 +453,15 @@ describe('authenticated chat streaming boundary', () => {
     const response = await handleEpisodeChatRequest(request())
     await response.text()
     expect(mocks.episodes).not.toHaveBeenCalled()
+    expect(logEntries()).toContainEqual(
+      expect.objectContaining({
+        event: 'chat.failed',
+        reason: 'tool_failed',
+        errorType: 'StandardSchemaValidationError',
+        validationIssues: expect.arrayContaining([
+          expect.objectContaining({ path: 'filters.days' }),
+        ]),
+      }),
+    )
   })
 })

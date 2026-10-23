@@ -3,20 +3,28 @@ import type { StreamChunk } from '@tanstack/ai'
 
 import { runWithAbort } from '#/lib/abort'
 import { episodeChatTimeoutCode } from '#/lib/episode-chat'
+import type { EpisodeChatDiagnostics } from '#/lib/episode-chat-diagnostics.server'
 import { m } from '#/paraglide/messages'
 
 export const episodeChatTimeoutMs = 45_000
 
 /** Work deadlines must not abort the encoder before it can deliver the timeout error. */
-export function createEpisodeChatRun(requestSignal: AbortSignal, locale: 'en' | 'fr') {
+export function createEpisodeChatRun(
+  requestSignal: AbortSignal,
+  locale: 'en' | 'fr',
+  diagnostics: EpisodeChatDiagnostics,
+) {
   const controller = new AbortController()
   const delivery = new AbortController()
-  const timeout = setTimeout(
-    () => controller.abort(new DOMException('Chat deadline exceeded', 'TimeoutError')),
-    episodeChatTimeoutMs,
-  )
+  const timeout = setTimeout(() => {
+    diagnostics.fail('deadline_exceeded')
+    controller.abort(new DOMException('Chat deadline exceeded', 'TimeoutError'))
+  }, episodeChatTimeoutMs)
   const onDisconnect = () => delivery.abort()
-  const onDeliveryCancelled = () => controller.abort()
+  const onDeliveryCancelled = () => {
+    diagnostics.cancel()
+    controller.abort()
+  }
   delivery.signal.addEventListener('abort', onDeliveryCancelled, { once: true })
   requestSignal.addEventListener('abort', onDisconnect, { once: true })
   if (requestSignal.aborted) onDisconnect()
@@ -42,12 +50,16 @@ export function createEpisodeChatRun(requestSignal: AbortSignal, locale: 'en' | 
         while (true) {
           // oxlint-disable-next-line no-await-in-loop -- Preserve event ordering while allowing the deadline to interrupt a pending pull.
           const next = await runWithAbort(controller.signal, () => iterator.next())
-          if (next.done) return
+          if (next.done) {
+            diagnostics.complete()
+            return
+          }
           yield next.value
           if (next.value.type === 'RUN_ERROR') return
         }
-      } catch {
+      } catch (error) {
         if (!delivery.signal.aborted) {
+          diagnostics.fail(timedOut() ? 'deadline_exceeded' : 'stream_error', error)
           yield {
             type: EventType.RUN_ERROR,
             code: timedOut() ? episodeChatTimeoutCode : 'CHAT_UNAVAILABLE',
