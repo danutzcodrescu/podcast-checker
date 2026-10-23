@@ -6,7 +6,6 @@ import {
   ChevronRight,
   List,
   LoaderCircle,
-  Plus,
   Search,
   SendHorizontal,
   SlidersHorizontal,
@@ -81,9 +80,8 @@ export function EpisodeChatPage({ email }: { email: string }) {
   const [stopped, setStopped] = useState(false)
   const [timedOut, setTimedOut] = useState(false)
   const [now] = useState(() => Date.now())
-  const textarea = useRef<HTMLTextAreaElement>(null)
   const bottom = useRef<HTMLDivElement>(null)
-  const { messages, sendMessage, isLoading, error, stop, clear, reload } = useChat({
+  const { messages, sendMessage, isLoading, error, stop, reload } = useChat({
     connection: fetchServerSentEvents('/api/chat', () => ({
       credentials: 'same-origin',
       body: { locale: getLocale() },
@@ -107,13 +105,6 @@ export function EpisodeChatPage({ email }: { email: string }) {
   const hasLatestResult = messages
     .slice(latestUserIndex + 1)
     .some((message) => messageResult(message))
-  const initials = email
-    .split(/[.@_-]/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join('')
-    .toUpperCase()
 
   useEffect(() => {
     if (messages.length)
@@ -225,24 +216,12 @@ export function EpisodeChatPage({ email }: { email: string }) {
                       .map((part) => part.content)
                       .join('')}
                   </p>
-                  <span
-                    className="grid size-9 shrink-0 place-items-center rounded-full bg-border text-xs font-semibold"
-                    aria-hidden="true"
-                  >
-                    {initials}
-                  </span>
                 </div>
               )
             const result = messageResult(message)
             if (!result) return null
             return (
               <div key={message.id} className="flex items-start gap-3 mobile:gap-2">
-                <span
-                  className="mt-1 grid size-9 shrink-0 place-items-center rounded-full bg-accent text-primary mobile:size-7"
-                  aria-hidden="true"
-                >
-                  <Sparkles className="size-5" />
-                </span>
                 <div className="min-w-0 flex-1 space-y-2">
                   <div className="w-fit max-w-full rounded-2xl rounded-tl-md border border-card-border bg-surface-muted/50 px-4 py-3 leading-relaxed">
                     {result.kind === 'clarification' ? (
@@ -303,15 +282,12 @@ export function EpisodeChatPage({ email }: { email: string }) {
             </output>
           )}
           {!isLoading && !error && messages.length > 0 && !hasLatestResult && (
-            <output className="ml-12 rounded-xl border border-border bg-surface p-4">
+            <output className="rounded-xl border border-border bg-surface p-4">
               {stopped ? m.chat_stopped() : m.chat_interpretation_error()}
             </output>
           )}
           {error && (
-            <div
-              role="alert"
-              className="ml-12 rounded-xl border border-border bg-surface p-4 mobile:ml-0"
-            >
+            <div role="alert" className="rounded-xl border border-border bg-surface p-4">
               <p className="text-destructive">
                 {timedOut || responseStatus === 504
                   ? m.chat_timeout()
@@ -347,34 +323,14 @@ export function EpisodeChatPage({ email }: { email: string }) {
         <div className="z-10 mt-auto shrink-0 bg-background/90 pt-2 pb-3 backdrop-blur-md">
           <div className="rounded-2xl border border-card-border bg-surface p-2 shadow-elevated">
             <form
-              className="flex items-end gap-2"
+              className="flex items-stretch gap-2"
               onSubmit={(event) => {
                 event.preventDefault()
                 submit(input)
               }}
             >
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                aria-label={m.chat_new()}
-                title={m.chat_new()}
-                onClick={() => {
-                  stop()
-                  clear()
-                  setInput('')
-                  setHeaderInput('')
-                  setResponseStatus(null)
-                  setStopped(false)
-                  setTimedOut(false)
-                  textarea.current?.focus()
-                }}
-              >
-                <Plus className="size-5" aria-hidden="true" />
-              </Button>
-              <div className="flex min-w-0 flex-1 items-end rounded-xl border border-input bg-white focus-within:outline-2 focus-within:outline-ring">
+              <div className="flex min-w-0 flex-1 items-center rounded-xl border border-input bg-white focus-within:outline-2 focus-within:outline-ring">
                 <textarea
-                  ref={textarea}
                   rows={1}
                   className="max-h-32 min-h-11 w-full resize-y border-0 bg-transparent px-3 py-3 text-sm placeholder:text-muted-foreground focus:outline-none mobile:min-h-16"
                   aria-label={m.chat_input_label()}
@@ -417,6 +373,7 @@ export function EpisodeChatPage({ email }: { email: string }) {
                   type="button"
                   size="icon"
                   aria-label={m.chat_stop()}
+                  className="h-auto min-h-11"
                   onClick={() => {
                     setStopped(true)
                     stop()
@@ -429,6 +386,7 @@ export function EpisodeChatPage({ email }: { email: string }) {
                   type="submit"
                   size="icon"
                   aria-label={m.chat_send()}
+                  className="h-auto min-h-11"
                   disabled={disabled || !input.trim()}
                 >
                   <SendHorizontal className="size-5" aria-hidden="true" />

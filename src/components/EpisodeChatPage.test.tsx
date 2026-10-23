@@ -162,7 +162,7 @@ describe('episode chat page', () => {
     expect(screen.queryByRole('link', { name: /Show more episodes/ })).not.toBeInTheDocument()
   })
 
-  it('keeps follow-up context on the wire and clears it with New conversation', async () => {
+  it('keeps follow-up context on the wire', async () => {
     const user = userEvent.setup()
     renderPage()
     const input = screen.getByRole('textbox', { name: 'Ask about your episodes' })
@@ -181,9 +181,6 @@ describe('episode chat page', () => {
           typeof message.content === 'string' && message.content.includes('previousSearchCriteria'),
       ),
     ).toBe(true)
-    await user.click(screen.getByRole('button', { name: 'New conversation' }))
-    expect(screen.getByRole('log')).not.toHaveTextContent('Roman history')
-    expect(screen.getByText('What would you like to listen to?')).toBeVisible()
   })
 
   it('does not contact a model for an empty library', async () => {

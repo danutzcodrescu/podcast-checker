@@ -76,11 +76,6 @@ export function PodcastPageShell({
                 : tab === 'chat'
                   ? m.chat_tab()
                   : m.episodes_heading()}
-              {tab === 'chat' && (
-                <span className="ml-2 rounded-full border border-primary/15 bg-accent px-2 py-0.5 text-caption font-semibold text-primary">
-                  BETA
-                </span>
-              )}
             </Link>
           ))}
         </nav>

@@ -44,7 +44,8 @@ export function AccountMenu({ email, pending, onSignOut, avatar = false }: Accou
         ) : avatar ? (
           <span aria-hidden="true">
             {email
-              .split(/[.@_-]/)
+              .split('@')[0]
+              .split(/[._-]/)
               .filter(Boolean)
               .slice(0, 2)
               .map((part) => part[0])
