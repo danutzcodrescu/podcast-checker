@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { Check, ListPlus, LoaderCircle, MoreVertical, Play } from 'lucide-react'
+import { Check, LoaderCircle, MoreVertical } from 'lucide-react'
 
 import { CategoryBadge, PodcastArtwork } from '#/components/PodcastCard'
 import { pocketCastsErrorMessage } from '#/components/PocketCastsConnection'
@@ -75,10 +75,8 @@ export function EpisodeCard({
         <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
       ) : queued ? (
         <Check className="size-4" aria-hidden="true" />
-      ) : compact ? (
-        <Play className="size-4 fill-current" aria-hidden="true" />
       ) : (
-        <ListPlus className="size-4" aria-hidden="true" />
+        <img src="/pocket-casts.svg" alt="" width={20} height={20} className="size-5 shrink-0" />
       )}
       {!compact && (
         <span className="mobile:sr-only">

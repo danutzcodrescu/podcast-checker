@@ -323,7 +323,7 @@ export function EpisodeChatPage({ email }: { email: string }) {
         <div className="z-10 mt-auto shrink-0 bg-background/90 pt-2 pb-3 backdrop-blur-md">
           <div className="rounded-2xl border border-card-border bg-surface p-2 shadow-elevated">
             <form
-              className="flex items-stretch gap-2"
+              className="flex items-center gap-2"
               onSubmit={(event) => {
                 event.preventDefault()
                 submit(input)
@@ -332,7 +332,7 @@ export function EpisodeChatPage({ email }: { email: string }) {
               <div className="flex min-w-0 flex-1 items-center rounded-xl border border-input bg-white focus-within:outline-2 focus-within:outline-ring">
                 <textarea
                   rows={1}
-                  className="max-h-32 min-h-11 w-full resize-y border-0 bg-transparent px-3 py-3 text-sm placeholder:text-muted-foreground focus:outline-none mobile:min-h-16"
+                  className="h-11 max-h-32 min-h-11 w-full resize-y border-0 bg-transparent px-3 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none"
                   aria-label={m.chat_input_label()}
                   placeholder={m.chat_placeholder()}
                   maxLength={episodeChatPromptLimit}
@@ -352,7 +352,9 @@ export function EpisodeChatPage({ email }: { email: string }) {
                 />
                 <Popover>
                   <PopoverTrigger
-                    render={<Button type="button" variant="ghost" size="icon" className="m-0.5" />}
+                    render={
+                      <Button type="button" variant="ghost" size="icon" className="m-0.5 size-10" />
+                    }
                     aria-label={m.chat_settings()}
                     title={m.chat_settings()}
                   >
@@ -373,7 +375,6 @@ export function EpisodeChatPage({ email }: { email: string }) {
                   type="button"
                   size="icon"
                   aria-label={m.chat_stop()}
-                  className="h-auto min-h-11"
                   onClick={() => {
                     setStopped(true)
                     stop()
@@ -386,7 +387,6 @@ export function EpisodeChatPage({ email }: { email: string }) {
                   type="submit"
                   size="icon"
                   aria-label={m.chat_send()}
-                  className="h-auto min-h-11"
                   disabled={disabled || !input.trim()}
                 >
                   <SendHorizontal className="size-5" aria-hidden="true" />

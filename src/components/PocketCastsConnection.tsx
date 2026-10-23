@@ -39,7 +39,16 @@ export function PocketCastsConnection({ integration }: { integration: PocketCast
     <div className="mb-5 rounded-xl border border-border bg-surface p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0 flex-1 wrap-anywhere">
-          <h2 className="font-bold">Pocket Casts</h2>
+          <h2 className="flex items-center gap-2 font-bold">
+            <img
+              src="/pocket-casts.svg"
+              alt=""
+              width={24}
+              height={24}
+              className="size-6 shrink-0"
+            />
+            Pocket Casts
+          </h2>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
             {connection.isPending
               ? m.pocket_casts_loading()
