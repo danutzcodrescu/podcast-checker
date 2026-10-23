@@ -35,6 +35,19 @@ describe('episode chat contract', () => {
       expect(episodeChatDecision.safeParse({ ...chatDecision, filters }).success).toBe(false)
   })
 
+  it.each([
+    { clarification: false },
+    { clarification: [] },
+    { clarification: 'x'.repeat(601) },
+    { unsupportedConstraints: 'none' },
+    { unsupportedConstraints: [false] },
+    { unsupportedConstraints: Array.from({ length: 11 }, () => 'duration') },
+    { action: undefined },
+    { filters: undefined },
+  ])('does not coerce malformed metadata or default required decision fields: %j', (overrides) => {
+    expect(episodeChatDecision.safeParse({ ...chatDecision, ...overrides }).success).toBe(false)
+  })
+
   it('does not render malformed data, more than ten cards, or arbitrary model output', () => {
     expect(readEpisodeChatResult(chatResults(11))).toBeNull()
     expect(readEpisodeChatResult('I found a podcast!')).toBeNull()

@@ -102,6 +102,57 @@ afterEach(() => {
 })
 
 describe('authenticated chat streaming boundary', () => {
+  it.each([
+    { label: 'omitted', metadata: {} },
+    { label: 'null', metadata: { clarification: null, unsupportedConstraints: null } },
+    { label: 'empty', metadata: { clarification: '', unsupportedConstraints: [] } },
+  ])('accepts $label no-correction metadata for an explicit valid search', async ({ metadata }) => {
+    vi.mocked(fetch).mockResolvedValue(
+      providerStream({
+        action: 'search',
+        filters: chatDecision.filters,
+        ...metadata,
+      }),
+    )
+    const events = await (await handleEpisodeChatRequest(request())).text()
+    expect(events).toContain('TOOL_CALL_RESULT')
+    expect(events).toContain('Roman history 1')
+    expect(events).not.toContain('RUN_ERROR')
+    expect(mocks.episodes).toHaveBeenCalledOnce()
+    expect(logEntries().filter(({ event }) => event === 'chat.failed')).toEqual([])
+  })
+
+  it.each([
+    { action: 'clarify', filters: chatDecision.filters },
+    {
+      action: 'clarify',
+      filters: chatDecision.filters,
+      clarification: null,
+      unsupportedConstraints: null,
+    },
+    {
+      action: 'search',
+      filters: chatDecision.filters,
+      unsupportedConstraints: ['under 30 minutes'],
+      clarification: null,
+    },
+    {
+      action: 'search',
+      filters: chatDecision.filters,
+      clarification: 'Which podcast did you mean?',
+    },
+  ])(
+    'keeps clarification and unsupported-constraint guards with absent/null metadata: %j',
+    async (decision) => {
+      vi.mocked(fetch).mockResolvedValue(providerStream(decision))
+      const events = await (await handleEpisodeChatRequest(request())).text()
+      expect(events).toContain('TOOL_CALL_RESULT')
+      expect(events).toContain('clarification')
+      expect(events).not.toContain('RUN_ERROR')
+      expect(mocks.episodes).not.toHaveBeenCalled()
+    },
+  )
+
   it('logs missing configuration instead of silently returning the generic 503', async () => {
     vi.stubEnv('OPENROUTER_API_KEY', '')
     const response = await handleEpisodeChatRequest(request())
@@ -458,6 +509,7 @@ describe('authenticated chat streaming boundary', () => {
         event: 'chat.failed',
         reason: 'tool_failed',
         errorType: 'StandardSchemaValidationError',
+        argumentTypes: { clarification: 'string', unsupportedConstraints: 'array' },
         validationIssues: expect.arrayContaining([
           expect.objectContaining({ path: 'filters.days' }),
         ]),

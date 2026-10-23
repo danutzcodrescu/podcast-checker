@@ -49,6 +49,22 @@ const validationFields = new Set([
   'podcastId',
   'categoryId',
 ])
+const validationCodes = new Set([
+  'invalid_type',
+  'invalid_value',
+  'invalid_format',
+  'too_small',
+  'too_big',
+  'unrecognized_keys',
+  'invalid_union',
+  'custom',
+])
+
+function argumentType(input: unknown, field: 'clarification' | 'unsupportedConstraints') {
+  if (!input || typeof input !== 'object' || !(field in input)) return 'missing'
+  const value = Reflect.get(input, field)
+  return value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value
+}
 
 /** Error messages, stacks, SDK metadata and causes can all contain private input.
  * Only retain machine codes, numeric statuses and a small set of error types. */
@@ -111,7 +127,10 @@ function errorDetails(
   const validationIssues =
     error instanceof ZodError || error instanceof StandardSchemaValidationError
       ? error.issues.slice(0, 8).map((issue) => ({
-          code: 'invalid_input',
+          code:
+            'code' in issue && typeof issue.code === 'string' && validationCodes.has(issue.code)
+              ? issue.code
+              : 'invalid_input',
           path: (issue.path ?? [])
             .map((segment) => {
               const part = typeof segment === 'object' ? segment.key : segment
@@ -139,6 +158,7 @@ export function createEpisodeChatDiagnostics(model: string) {
   let terminal = false
   let providerStatus: number | undefined
   let resultKind: 'results' | 'clarification' | undefined
+  let argumentTypes: { clarification: string; unsupportedConstraints: string } | undefined
   const fields = () => ({
     stage,
     providerStatus,
@@ -150,12 +170,19 @@ export function createEpisodeChatDiagnostics(model: string) {
     if (terminal) return
     terminal = true
     log.error(
-      { event: 'chat.failed', reason, ...fields(), ...errorDetails(error) },
+      { event: 'chat.failed', reason, ...fields(), argumentTypes, ...errorDetails(error) },
       'Episode chat failed',
     )
   }
 
   return {
+    toolInput(input: unknown) {
+      // Log only the types of these two fixed metadata fields, never their values.
+      argumentTypes = {
+        clarification: argumentType(input, 'clarification'),
+        unsupportedConstraints: argumentType(input, 'unsupportedConstraints'),
+      }
+    },
     stage(next: ChatStage) {
       stage = next
       if (!terminal) log.info({ event: 'chat.stage', ...fields() }, 'Episode chat stage started')

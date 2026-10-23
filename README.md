@@ -555,6 +555,12 @@ public podcast catalog from chat.
   choose a supported timeframe before searching. Do not silently approximate
   "last 14 days" or "during 2024", drop a duration constraint such as "under
   30 minutes", or run a partial search. Do not broaden a timeframe automatically.
+- Tool calls require an explicit `action` and complete valid filters. Correction
+  metadata (`clarification` and `unsupportedConstraints`) can be empty, omitted,
+  or `null` when absent; models do not always emit empty strings/arrays. A
+  `clarify` action still never searches, even without a question, and any supplied
+  correction question or unsupported-constraint list still blocks search. This
+  compatibility applies only to absent metadata, not malformed types or filters.
 - Keep context for follow-ups such as "same topic, but the last 30 days" while
   the chat page is open. Do not persist conversations in browser storage or the
   database; a reload starts fresh. No long-term preference profile is maintained.
@@ -658,6 +664,9 @@ streaming so late provider/tool failures retain the same request context.
 - `stage=search`, `reason=tool_failed`: check `errorCode` (including nested database
   or network cause codes), `errorLocations`, and allowlisted `validationIssues`
   paths for malformed model arguments. Values and validation messages are omitted.
+  `argumentTypes` records only whether the two correction fields were missing,
+  null, strings, arrays, or another type; issue codes distinguish invalid types
+  from length/value errors without exposing the model's arguments.
 - `reason=deadline_exceeded`: the application reached its 45-second deadline.
   If logs stop at `chat.stage`/`chat.provider_response` with no terminal chat event,
   inspect Netlify's invocation timeout/termination logs and the browser network

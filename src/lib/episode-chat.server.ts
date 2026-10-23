@@ -114,6 +114,7 @@ export async function handleEpisodeChatRequest(request: Request) {
         systemPrompts: [
           `You interpret episode search requests, not general conversation. Respond in ${input.locale === 'fr' ? 'French' : 'English'}.
 Call resolve_episode_search EXACTLY ONCE. Do not answer in free text. Do not invent episodes or recommendations.
+For a supported search, use action="search", clarification="", and unsupportedConstraints=[]. For a correction, use action="clarify" and a short clarification question. Never omit action or the complete filters object.
 Check the ENTIRE request for unsupported constraints BEFORE searching. action=clarify and list unsupportedConstraints if ANY are unsupported or ambiguous. Never search a supported subset or silently drop/approximate a constraint. Ask a short correction question.
 Supported: one topic query (max 200 characters, used for BOTH keyword and semantic retrieval), one followed podcast ID, one listener category ID (intersection), days=7/30/90/null (null=ALL TIME, DEFAULT), sort=newest/oldest/relevance, searchMode=hybrid/text/semantic (DEFAULT hybrid). Default sort=relevance for a topic, newest without one.
 Supported rolling periods: last week=7, last 30 days=30, last 90 days=90, all time=null. "Recent", calendar months/years, last 14 days, date intervals, duration, language filtering, multiple shows/categories, exclusion filters, and other unrepresentable constraints REQUIRE clarification. Offer 7, 30, 90 days or all time for timeframe corrections. Metadata in returned episodes does not mean it is a supported filter.
@@ -163,7 +164,8 @@ Library data: ${scope}`,
                 if (result.kind !== 'ignored') diagnostics.result(result.kind)
               }
             },
-            onBeforeToolCall: () => {
+            onBeforeToolCall: (_context, info) => {
+              diagnostics.toolInput(info.args)
               diagnostics.stage('search')
             },
             onAfterToolCall: (_context, info) => {

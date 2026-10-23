@@ -26,14 +26,16 @@ export const episodeChatDecision = z
     clarification: z
       .string()
       .max(600)
+      .nullish()
       .describe(
-        'A short question in the listener’s language when clarification is needed; otherwise empty.',
+        'A short question in the listener’s language when clarification is needed; otherwise an empty string. Omitted/null means no correction question.',
       ),
     unsupportedConstraints: z
       .array(z.string().max(200))
       .max(10)
+      .nullish()
       .describe(
-        'Every unsupported constraint, including duration, arbitrary dates, multiple podcasts/categories, discovery or write actions. Never silently drop one.',
+        'Every unsupported constraint, including duration, arbitrary dates, multiple podcasts/categories, discovery or write actions. Never silently drop one. Use [] when none are identified; omitted/null also means none identified.',
       ),
     filters: episodeChatFilters.describe(
       'Complete resolved criteria, including context from follow-ups. days=null means all time and is the default. Only use IDs from the listener’s library.',

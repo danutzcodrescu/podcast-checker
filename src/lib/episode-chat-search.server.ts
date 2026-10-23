@@ -18,14 +18,11 @@ export function createEpisodeChatSearch(userId: string, signal: AbortSignal, loc
     used = true
     signal.throwIfAborted()
     const decision = episodeChatDecision.parse(input)
-    if (
-      decision.action === 'clarify' ||
-      decision.unsupportedConstraints.length ||
-      decision.clarification.trim()
-    ) {
+    const clarification = decision.clarification?.trim() ?? ''
+    if (decision.action === 'clarify' || decision.unsupportedConstraints?.length || clarification) {
       return {
         kind: 'clarification' as const,
-        message: decision.clarification.trim() || correction,
+        message: clarification || correction,
       }
     }
 
