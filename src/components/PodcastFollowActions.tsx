@@ -1,5 +1,6 @@
 import { Check, Pencil, Plus, Tag, X } from 'lucide-react'
 import { useId, useRef, useState } from 'react'
+import type { RefObject } from 'react'
 
 import { Button } from '#/components/ui/Button'
 import { Checkbox } from '#/components/ui/Checkbox'
@@ -12,6 +13,8 @@ import { categoryId } from '#/lib/podcast-library-input'
 import { m } from '#/paraglide/messages'
 
 function CategoryEditor({
+  headingId,
+  inputRef,
   categories,
   selected,
   pending,
@@ -19,6 +22,8 @@ function CategoryEditor({
   onClose,
   onSave,
 }: {
+  headingId: string
+  inputRef: RefObject<HTMLInputElement | null>
   categories: PodcastLibrary['categories']
   selected: string[]
   pending: boolean
@@ -39,89 +44,85 @@ function CategoryEditor({
     createCategory,
     selectQuery,
   } = useCategoryEditor({ categories, selected, pending })
-  const headingId = useId()
-  const inputRef = useRef<HTMLInputElement>(null)
 
   return (
-    <PopoverContent align="end" aria-labelledby={headingId} initialFocus={inputRef}>
-      <form
-        onSubmit={async (event) => {
-          event.preventDefault()
-          if (await onSave(names)) onClose()
-        }}
-      >
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <h3 id={headingId} className="font-semibold">
-            {m.library_add_categories()}
-          </h3>
-          <PopoverClose
-            render={<Button type="button" variant="ghost" size="icon" />}
-            aria-label={m.library_close_categories()}
-            disabled={pending}
-          >
-            <X className="size-4" aria-hidden="true" />
-          </PopoverClose>
-        </div>
-        <Input
-          ref={inputRef}
-          className="mb-3 h-10 rounded-lg"
-          type="search"
-          aria-label={m.library_find_category()}
-          placeholder={m.library_find_category()}
-          value={query}
-          maxLength={60}
-          onChange={(event) => setQuery(event.target.value)}
+    <form
+      onSubmit={async (event) => {
+        event.preventDefault()
+        if (await onSave(names)) onClose()
+      }}
+    >
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h3 id={headingId} className="font-semibold">
+          {m.library_add_categories()}
+        </h3>
+        <PopoverClose
+          render={<Button type="button" variant="ghost" size="icon" />}
+          aria-label={m.library_close_categories()}
           disabled={pending}
-          onKeyDown={(event) => {
-            if (event.key !== 'Enter') return
-            event.preventDefault()
-            if (!event.nativeEvent.isComposing) selectQuery()
-          }}
-        />
-        <div className="mb-3 max-h-60 overflow-y-auto">
-          {matching.map((name, index) => (
-            <label
-              key={categoryId(name)}
-              htmlFor={`${headingId}-category-${index}`}
-              className="flex min-h-9 cursor-pointer items-center gap-2 rounded px-1 hover:bg-accent"
-            >
-              <Checkbox
-                id={`${headingId}-category-${index}`}
-                checked={names.includes(name)}
-                onCheckedChange={() => toggle(name)}
-                disabled={!canSelect(name)}
-              />
-              <span className="min-w-0 wrap-anywhere">{name}</span>
-            </label>
-          ))}
-          {canCreate && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="min-h-9 w-full justify-start px-1 py-0 text-left font-normal text-link"
-              disabled={!canAdd}
-              onClick={createCategory}
-            >
-              <Plus className="size-4 shrink-0" aria-hidden="true" />
-              <span className="wrap-anywhere">
-                {m.library_create_category({ name: query.trim() })}
-              </span>
-            </Button>
-          )}
-          {choices.length === 0 && !query.trim() && (
-            <p className="text-sm text-muted-foreground">{m.library_categories_hint()}</p>
-          )}
-        </div>
-        <Button type="submit" disabled={pending}>
-          {pending
-            ? m.library_saving()
-            : followed
-              ? m.library_save_categories()
-              : m.library_follow_save()}
-        </Button>
-      </form>
-    </PopoverContent>
+        >
+          <X className="size-4" aria-hidden="true" />
+        </PopoverClose>
+      </div>
+      <Input
+        ref={inputRef}
+        className="mb-3 h-10 rounded-lg"
+        type="search"
+        aria-label={m.library_find_category()}
+        placeholder={m.library_find_category()}
+        value={query}
+        maxLength={60}
+        onChange={(event) => setQuery(event.target.value)}
+        disabled={pending}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter') return
+          event.preventDefault()
+          if (!event.nativeEvent.isComposing) selectQuery()
+        }}
+      />
+      <div className="mb-3 max-h-60 overflow-y-auto">
+        {matching.map((name, index) => (
+          <label
+            key={categoryId(name)}
+            htmlFor={`${headingId}-category-${index}`}
+            className="flex min-h-9 cursor-pointer items-center gap-2 rounded px-1 hover:bg-accent"
+          >
+            <Checkbox
+              id={`${headingId}-category-${index}`}
+              checked={names.includes(name)}
+              onCheckedChange={() => toggle(name)}
+              disabled={!canSelect(name)}
+            />
+            <span className="min-w-0 wrap-anywhere">{name}</span>
+          </label>
+        ))}
+        {canCreate && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="min-h-9 w-full justify-start px-1 py-0 text-left font-normal text-link"
+            disabled={!canAdd}
+            onClick={createCategory}
+          >
+            <Plus className="size-4 shrink-0" aria-hidden="true" />
+            <span className="wrap-anywhere">
+              {m.library_create_category({ name: query.trim() })}
+            </span>
+          </Button>
+        )}
+        {choices.length === 0 && !query.trim() && (
+          <p className="text-sm text-muted-foreground">{m.library_categories_hint()}</p>
+        )}
+      </div>
+      <Button type="submit" disabled={pending}>
+        {pending
+          ? m.library_saving()
+          : followed
+            ? m.library_save_categories()
+            : m.library_follow_save()}
+      </Button>
+    </form>
   )
 }
 
@@ -145,6 +146,8 @@ export function PodcastFollowActions({
   onUnfollow: (id: number) => Promise<boolean>
 }) {
   const [open, setOpen] = useState(false)
+  const headingId = useId()
+  const inputRef = useRef<HTMLInputElement>(null)
 
   return (
     <div className="flex w-40 flex-col gap-2 mobile:w-full mobile:flex-row mobile:[&>*]:flex-1">
@@ -193,8 +196,11 @@ export function PodcastFollowActions({
           )}
           {followed ? m.library_edit_tags() : m.library_add_tags()}
         </PopoverTrigger>
-        {open && (
+        {/* Let Base UI finish restoring focus before it unmounts the draft form. */}
+        <PopoverContent align="end" aria-labelledby={headingId} initialFocus={inputRef}>
           <CategoryEditor
+            headingId={headingId}
+            inputRef={inputRef}
             categories={categories}
             selected={selected}
             pending={pending}
@@ -202,7 +208,7 @@ export function PodcastFollowActions({
             onClose={() => setOpen(false)}
             onSave={(names) => onSave(podcast, names)}
           />
-        )}
+        </PopoverContent>
       </Popover>
     </div>
   )

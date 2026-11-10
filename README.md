@@ -214,6 +214,65 @@ unstaged edits are preserved, and remaining lint errors block the commit.
 Run `pnpm lint:staged` to run the same checks manually on staged files.
 `pnpm check` checks linting and formatting across the project.
 
+## Sentry error monitoring
+
+The app uses `@sentry/tanstackstart-react` for browser errors (including router
+error boundaries and recoverable hydration errors), HTTP-handler errors, and
+server-function failures. It preserves the existing Pino logging, CSRF protection,
+and Paraglide middleware. No events are sent unless the corresponding DSN is set.
+
+Configure these in `.env.local` or your deployment environment:
+
+```dotenv
+# Public project DSN: Sentry → Settings → Projects → your project → Client Keys (DSN)
+VITE_SENTRY_DSN=https://your-public-key@your-ingest-host/your-project-id
+SENTRY_DSN=https://your-public-key@your-ingest-host/your-project-id
+# Optional; use matching labels for browser and server events
+VITE_SENTRY_ENVIRONMENT=production
+SENTRY_ENVIRONMENT=production
+
+# Optional, build-only credentials for readable production stack traces
+SENTRY_ORG=your-organization-slug
+SENTRY_PROJECT=your-project-slug
+SENTRY_AUTH_TOKEN=your-source-map-upload-token
+```
+
+The DSN is public; the auth token is a secret and must **never** have a `VITE_`
+prefix. On Netlify, set `VITE_SENTRY_*` in the **Builds** scope and `SENTRY_DSN` /
+`SENTRY_ENVIRONMENT` in **Functions**. The upload token, organization, and project
+need only the **Builds** scope. Restart/rebuild after changing browser settings.
+Browser environment defaults to Vite's mode; server environment defaults to
+Netlify's `CONTEXT`, then `NODE_ENV`.
+
+When all three upload settings are present, `pnpm build` generates hidden source
+maps, uploads them, and removes them from the output. Without them, uploads and
+Sentry-generated source maps are disabled so local/CI builds need no credentials.
+
+This integration is **error monitoring only**: tracing, replay, breadcrumbs,
+Sentry logs, and metrics are disabled. Automatic collection of user identity,
+headers, cookies, HTTP bodies, query-string values, AI content, database parameters,
+and local variables is disabled. The event filter also removes request payloads,
+user/extra data and query strings, sanitizes Drizzle query-error messages, and
+ignores redirects, not-found results, and Zod input validation failures. Keep
+custom error messages free of sensitive data; ordinary exception messages and
+stack locations are still sent to Sentry.
+
+The server initializes from its entry point for Netlify compatibility. This is
+not a Node preload/DB auto-instrumentation setup. Standalone ingestion functions
+and the ingestion CLI retain Pino logging and are not instrumented by this web SDK
+setup. Errors intentionally handled inside application services still need an
+explicit `captureException` if they should become Sentry issues. SSR render
+exceptions handled internally by the framework also require explicit capture in
+a custom renderer; the global middleware cannot observe those errors.
+
+To verify delivery, use a non-production Sentry project and temporarily add a
+button whose click handler throws `new Error('Sentry verification')`. Click it
+and check Sentry Issues for the matching environment; remove the button afterward.
+To verify server reporting, temporarily throw from an authenticated server
+function and invoke it through the app. Do not leave public test-error endpoints
+deployed. `pnpm test` verifies filtering and SDK delivery using an in-memory
+transport, without sending test events externally.
+
 ## Server logging
 
 The web server, Netlify functions, and ingestion CLI use **Pino** to write

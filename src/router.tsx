@@ -1,3 +1,4 @@
+import { captureException } from '@sentry/tanstackstart-react'
 import { createRouter as createTanStackRouter } from '@tanstack/react-router'
 import { routeTree } from './routeTree.gen'
 
@@ -14,6 +15,9 @@ export function getRouter() {
     scrollRestoration: true,
     defaultPreload: 'intent',
     defaultPreloadStaleTime: 0,
+    defaultOnCatch: (error) => {
+      captureException(error)
+    },
     rewrite: {
       input: ({ url }) => deLocalizeUrl(url),
       output: ({ url }) => localizeUrl(url),

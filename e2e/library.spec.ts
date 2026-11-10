@@ -34,6 +34,51 @@ async function seedEpisode(db: TestDatabase, feedId: string) {
   return episode.id
 }
 
+test('returns focus to the category editor trigger after Escape', async ({ page, db }) => {
+  const response = await page.request.post('/api/auth/sign-up/email', {
+    data: {
+      email: `library-focus-${randomUUID()}@example.com`,
+      name: 'Library focus test',
+      password: 'test-password-123',
+    },
+  })
+  expect(response.ok()).toBe(true)
+  const { user } = await response.json()
+  try {
+    await db.insert(followedPodcast).values({
+      userId: user.id,
+      podcastId: 123,
+      podcast: {
+        id: 123,
+        title: 'Library focus test podcast',
+        publisher: 'Test publisher',
+        appleUrl: 'https://podcasts.apple.com/podcast/id123',
+        feedUrl: null,
+        artworkUrl: null,
+      },
+      categories: [],
+    })
+    await page.goto('/discover')
+    await expandLibrary(page)
+    await page.getByRole('button', { name: 'Followed podcasts 1' }).click()
+    const trigger = page.getByRole('button', { name: 'Edit tags for Library focus test podcast' })
+    await trigger.click()
+    const editor = page.getByRole('dialog', { name: 'Add to categories' })
+    await expect(editor.getByRole('searchbox')).toBeFocused()
+    await editor.getByRole('searchbox').fill('Unsaved category')
+    await editor.getByRole('button', { name: 'Create “Unsaved category”' }).click()
+    await expect(editor.getByRole('checkbox', { name: 'Unsaved category' })).toBeChecked()
+    await editor.getByRole('searchbox').press('Escape')
+    await expect(editor).toHaveCount(0)
+    await expect(trigger).toBeFocused()
+    await trigger.click()
+    await expect(editor.getByRole('searchbox')).toHaveValue('')
+    await expect(editor.getByRole('checkbox', { name: 'Unsaved category' })).toHaveCount(0)
+  } finally {
+    await db.delete(users).where(eq(users.id, user.id))
+  }
+})
+
 test('persists category edits and unfollowing, with account-isolated libraries and responsive controls', async ({
   page,
   browser,
