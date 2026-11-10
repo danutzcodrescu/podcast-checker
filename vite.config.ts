@@ -3,6 +3,7 @@ import { devtools } from '@tanstack/devtools-vite'
 import { paraglideVitePlugin } from '@inlang/paraglide-js'
 
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
+import { redact } from '@tanstack/redact/vite'
 
 import viteReact, { reactCompilerPreset } from '@vitejs/plugin-react'
 import babel from '@rolldown/plugin-babel'
@@ -11,6 +12,7 @@ import netlify from '@netlify/vite-plugin-tanstack-start'
 
 const config = defineConfig({
   resolve: { tsconfigPaths: true },
+  ssr: { noExternal: true },
   plugins: [
     devtools(),
     paraglideVitePlugin({
@@ -23,6 +25,7 @@ const config = defineConfig({
     netlify({ dev: { edgeFunctions: { enabled: false } } }),
     viteReact(),
     babel({ presets: [reactCompilerPreset()] }),
+    redact(),
   ],
 })
 
