@@ -122,6 +122,20 @@ describe('authenticated chat streaming boundary', () => {
     expect(logEntries().filter(({ event }) => event === 'chat.failed')).toEqual([])
   })
 
+  it('passes the client conversation identity through to the chat run', async () => {
+    const events = await (
+      await handleEpisodeChatRequest(
+        request({
+          threadId: 'client-thread',
+          messages: [{ role: 'user', content: 'Find Roman history' }],
+        }),
+      )
+    ).text()
+    expect(events).toContain('"threadId":"client-thread"')
+    expect(events).toContain('TOOL_CALL_RESULT')
+    expect(events).not.toContain('RUN_ERROR')
+  })
+
   it('repairs provider-encoded empty-object metadata and still searches', async () => {
     vi.mocked(fetch).mockResolvedValue(
       providerStream({

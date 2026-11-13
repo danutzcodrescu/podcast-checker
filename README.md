@@ -672,6 +672,8 @@ or a footer disclaimer, a stop control, and a **+** control that starts a new co
 settings explain supported filters and contain the Pocket Casts connection UI.
 The app does not save chat history, but OpenRouter and its upstream provider receive
 the request and necessary library context; their retention policies still apply.
+Each page load uses a fresh in-memory conversation identity, which is never stored or
+reused after a reload.
 
 Expose purpose-built authenticated read-only tools over the existing library and
 episode-search services, not every server function. Derive listener identity from

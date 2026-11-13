@@ -174,6 +174,11 @@ describe('episode chat page', () => {
     const secondRequest = vi.mocked(fetch).mock.calls[1][1]
     expect(String(secondRequest?.body)).toContain('Roman history')
     expect(String(secondRequest?.body)).toContain('Same topic, last 30 days')
+    const firstWire = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body))
+    const secondWire = JSON.parse(String(secondRequest?.body))
+    expect(firstWire.threadId).toEqual(expect.any(String))
+    expect(firstWire.threadId.length).toBeGreaterThan(0)
+    expect(secondWire.threadId).toBe(firstWire.threadId)
     const normalized = parseEpisodeChatRequest(JSON.parse(String(secondRequest?.body)))
     expect(
       normalized.messages.some(

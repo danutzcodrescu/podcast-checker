@@ -4,6 +4,8 @@ import { z } from 'zod'
 import { episodeChatPromptLimit, readEpisodeChatResult } from '#/lib/episode-chat'
 
 const requestInput = z.object({
+  // The chat client sends the AG-UI thread identity. Older clients omit it.
+  threadId: z.string().trim().min(1).max(200).optional(),
   messages: z
     .array(
       z.object({
@@ -60,5 +62,9 @@ export function parseEpisodeChatRequest(body: unknown) {
     }
     messages.push({ role: message.role, content })
   }
-  return { messages, locale: input.forwardedProps.locale }
+  return {
+    messages,
+    locale: input.forwardedProps.locale,
+    threadId: input.threadId ?? crypto.randomUUID(),
+  }
 }

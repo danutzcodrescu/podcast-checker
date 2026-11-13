@@ -110,6 +110,7 @@ export async function handleEpisodeChatRequest(request: Request) {
         createModel(model, ['text']),
       ])
       const stream = chat({
+        threadId: input.threadId,
         adapter: configuredOpenRouter(model, apiKey, {
           debugLogger: { group() {}, groupEnd() {}, log() {} },
           retryConfig: { strategy: 'none' },

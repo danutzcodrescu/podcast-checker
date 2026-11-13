@@ -80,8 +80,11 @@ export function EpisodeChatPage({ email }: { email: string }) {
   const [stopped, setStopped] = useState(false)
   const [timedOut, setTimedOut] = useState(false)
   const [now] = useState(() => Date.now())
+  // Conversations are intentionally ephemeral: a reload starts a new one.
+  const [threadId] = useState(() => crypto.randomUUID())
   const bottom = useRef<HTMLDivElement>(null)
   const { messages, sendMessage, isLoading, error, stop, reload } = useChat({
+    threadId,
     connection: fetchServerSentEvents('/api/chat', () => ({
       credentials: 'same-origin',
       body: { locale: getLocale() },

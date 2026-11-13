@@ -37,7 +37,7 @@ export function PocketCastsConnection({ integration }: { integration: PocketCast
 
   return (
     <div className="mb-5 rounded-xl border border-border bg-surface p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 mobile:flex-col mobile:items-stretch">
         <div className="min-w-0 flex-1 wrap-anywhere">
           <h2 className="flex items-center gap-2 font-bold">
             <img
