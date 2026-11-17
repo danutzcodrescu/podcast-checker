@@ -43,6 +43,20 @@ export function createEpisodeChatRun(
     )
   }
 
+  function wrapFetch(baseFetch: typeof fetch): typeof fetch {
+    const observedFetch = diagnostics.wrapFetch(baseFetch)
+    return async (input, init) => {
+      const providerSignal = init?.signal ?? (input instanceof Request ? input.signal : undefined)
+      // Bind the deadline at the transport boundary too: provider SDKs can clone
+      // requests without reliably preserving the upstream cancellation chain.
+      const signal = providerSignal
+        ? AbortSignal.any([controller.signal, providerSignal])
+        : controller.signal
+      signal.throwIfAborted()
+      return observedFetch(input, { ...init, signal })
+    }
+  }
+
   function respond(source: AsyncIterable<StreamChunk>) {
     async function* forward(): AsyncGenerator<StreamChunk> {
       const iterator = source[Symbol.asyncIterator]()
@@ -79,5 +93,5 @@ export function createEpisodeChatRun(
     })
   }
 
-  return { controller, signal: controller.signal, timedOut, respond, dispose }
+  return { controller, signal: controller.signal, timedOut, wrapFetch, respond, dispose }
 }

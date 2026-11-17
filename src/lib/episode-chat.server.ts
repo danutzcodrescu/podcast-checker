@@ -140,7 +140,7 @@ Library data: ${scope}`,
         abortController: run.controller,
         // SDK debug payloads can contain private input; diagnostics logs an allowlist instead.
         debug: false,
-        wrapFetch: diagnostics.wrapFetch,
+        wrapFetch: run.wrapFetch,
         // Some providers encode absent optional metadata as `{}`. Repair only
         // those fields, then revalidate; malformed filters still fail.
         repairToolInput: ({ tool: calledTool, input: rawInput }) => {
