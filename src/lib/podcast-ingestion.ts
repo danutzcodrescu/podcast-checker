@@ -58,9 +58,51 @@ export async function saveFeedEpisodes(
             metadata: sql`excluded.metadata`,
             updatedAt: new Date(),
           },
+          // Null-safe comparisons include display-only edits, not just the
+          // embedding hash. Unchanged rows retain their timestamp and tuple.
+          setWhere: sql.join(
+            [
+              podcastEpisode.guid,
+              podcastEpisode.title,
+              podcastEpisode.embeddingTitle,
+              podcastEpisode.description,
+              podcastEpisode.descriptionHtml,
+              podcastEpisode.cleanedDescription,
+              podcastEpisode.publishedAt,
+              podcastEpisode.durationSeconds,
+              podcastEpisode.episodeNumber,
+              podcastEpisode.seasonNumber,
+              podcastEpisode.episodeType,
+              podcastEpisode.explicit,
+              podcastEpisode.audioUrl,
+              podcastEpisode.artworkUrl,
+              podcastEpisode.link,
+              podcastEpisode.metadata,
+            ].map(
+              (column) => sql`${column} is distinct from excluded.${sql.identifier(column.name)}`,
+            ),
+            sql` or `,
+          ),
         })
         .returning({ id: podcastEpisode.id, key: podcastEpisode.key })
       const ids = new Map(saved.map((row) => [row.key, row.id]))
+      // A conditional upsert does not RETURN unchanged rows. They still need an
+      // embedding outbox entry, including recovery of an absent/pending entry.
+      if (saved.length < batch.length) {
+        const existing = await tx
+          .select({ id: podcastEpisode.id, key: podcastEpisode.key })
+          .from(podcastEpisode)
+          .where(
+            and(
+              eq(podcastEpisode.feedId, feedId),
+              inArray(
+                podcastEpisode.key,
+                batch.map(({ key }) => key),
+              ),
+            ),
+          )
+        for (const row of existing) ids.set(row.key, row.id)
+      }
       await tx
         .insert(episodeEmbedding)
         .values(

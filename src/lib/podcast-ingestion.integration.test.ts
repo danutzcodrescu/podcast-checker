@@ -2,7 +2,6 @@
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { eq, inArray, sql } from 'drizzle-orm'
-import { migrate } from 'drizzle-orm/node-postgres/migrator'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { user } from '../db/auth-schema'
@@ -13,6 +12,7 @@ import {
   podcastFeed,
 } from '../db/ingestion-schema'
 import { followedPodcast } from '../db/library-schema'
+import { createTestDatabase } from '../test/database'
 import { parseRss } from './rss-parser'
 import { embeddingContent, embeddingDimensions, embeddingModel } from './episode-text'
 
@@ -20,7 +20,7 @@ const mocks = vi.hoisted(() => ({ embed: vi.fn(), fetch: vi.fn() }))
 vi.mock('./episode-embeddings', () => ({ embedEpisodes: mocks.embed }))
 vi.mock('./rss-fetch', () => ({ fetchRss: mocks.fetch }))
 
-const testUrl = process.env.PODCAST_TEST_DATABASE_URL
+const database = createTestDatabase()
 const userId = randomUUID()
 const feedIds: string[] = []
 let db: (typeof import('../db/index'))['db']
@@ -59,28 +59,27 @@ async function pending(feedId: string) {
     .where(eq(podcastEpisode.feedId, feedId))
 }
 
-// Explicitly opt in with a dedicated pgvector-enabled database. No developer
-// library records or credentials are used by this integration suite.
-describe.runIf(!!testUrl)('durable incremental ingestion', () => {
+// Explicitly opt in with an isolated container or dedicated pgvector test URL.
+// No developer library records or credentials are used by this integration suite.
+describe.runIf(database.enabled)('durable incremental ingestion', () => {
   beforeAll(async () => {
-    process.env.DATABASE_URL = testUrl
-    db = (await import('../db/index')).db
+    db = await database.start()
     ingestion = await import('./podcast-ingestion')
-    await migrate(db, { migrationsFolder: './drizzle' })
     await db
       .insert(user)
       .values({ id: userId, name: 'Ingestion test', email: `${userId}@example.com` })
-  })
+  }, 120_000)
   beforeEach(() => {
     mocks.embed.mockReset().mockImplementation(async (inputs: string[]) => inputs.map(() => vector))
     mocks.fetch.mockReset()
   })
   afterAll(async () => {
-    if (!db) return
-    await db.delete(user).where(eq(user.id, userId))
-    if (feedIds.length) await db.delete(podcastFeed).where(inArray(podcastFeed.id, feedIds))
-    await db.$client.end()
-  })
+    await database.stop(async (cleanupDb) => {
+      await cleanupDb.delete(user).where(eq(user.id, userId))
+      if (feedIds.length)
+        await cleanupDb.delete(podcastFeed).where(inArray(podcastFeed.id, feedIds))
+    })
+  }, 30_000)
 
   it('migrates old vectors and failed inputs to pending Cloudflare embeddings with matching hashes', async () => {
     const client = await db.$client.connect()
@@ -146,6 +145,117 @@ describe.runIf(!!testUrl)('durable incremental ingestion', () => {
     expect(mocks.embed).toHaveBeenCalledTimes(2)
     expect(mocks.embed.mock.calls[1][0]).toHaveLength(1)
     expect(await pending(saved.id)).toHaveLength(2)
+  })
+
+  it('does not rewrite unchanged episode metadata or completed embeddings', async () => {
+    const saved = await feed()
+    const episodes = parseRss(xml('unchanged')).episodes
+    await ingestion.saveFeedEpisodes(saved.id, episodes)
+    await ingestion.processEpisodeEmbeddings(await pending(saved.id))
+    const read = () =>
+      db
+        .select({
+          id: podcastEpisode.id,
+          updatedAt: podcastEpisode.updatedAt,
+          revision: sql<string>`podcast_episode.xmin::text`,
+          embeddingRevision: sql<string>`episode_embedding.xmin::text`,
+        })
+        .from(podcastEpisode)
+        .innerJoin(episodeEmbedding, eq(episodeEmbedding.episodeId, podcastEpisode.id))
+        .where(eq(podcastEpisode.feedId, saved.id))
+    const before = await read()
+    await ingestion.saveFeedEpisodes(saved.id, parseRss(xml('unchanged')).episodes)
+    expect(await read()).toEqual(before)
+  })
+
+  it('preserves unchanged rows in a mixed batch and repairs their missing embedding outbox', async () => {
+    const saved = await feed()
+    const original = parseRss(xml('unchanged')).episodes[0]
+    const edited = parseRss(xml('edited')).episodes[0]
+    await ingestion.saveFeedEpisodes(saved.id, [original, edited])
+    const before = await db
+      .select({ id: podcastEpisode.id, key: podcastEpisode.key, revision: sql<string>`xmin::text` })
+      .from(podcastEpisode)
+      .where(eq(podcastEpisode.feedId, saved.id))
+    const unchanged = before.find((row) => row.key === original.key)!
+    await db.delete(episodeEmbedding).where(eq(episodeEmbedding.episodeId, unchanged.id))
+    const changed = {
+      ...edited,
+      durationSeconds: 1234,
+      explicit: false,
+      metadata: { ...edited.metadata, subtitle: 'Updated metadata' },
+    }
+    await ingestion.saveFeedEpisodes(saved.id, [
+      original,
+      changed,
+      parseRss(xml('new')).episodes[0],
+    ])
+    const after = await db
+      .select({
+        id: podcastEpisode.id,
+        key: podcastEpisode.key,
+        revision: sql<string>`xmin::text`,
+        durationSeconds: podcastEpisode.durationSeconds,
+        explicit: podcastEpisode.explicit,
+        metadata: podcastEpisode.metadata,
+      })
+      .from(podcastEpisode)
+      .where(eq(podcastEpisode.feedId, saved.id))
+    expect(after).toHaveLength(3)
+    expect(after.find((row) => row.key === original.key)).toMatchObject(unchanged)
+    expect(after.find((row) => row.key === edited.key)).toMatchObject({
+      durationSeconds: 1234,
+      explicit: false,
+      metadata: { ...edited.metadata, subtitle: 'Updated metadata' },
+    })
+    expect(after.find((row) => row.key === edited.key)?.revision).not.toBe(
+      before.find((row) => row.key === edited.key)?.revision,
+    )
+    expect(await pending(saved.id)).toHaveLength(3)
+  })
+
+  it.each([
+    { guid: 'updated-guid' },
+    { title: 'Updated title' },
+    { embeddingTitle: 'Updated embedding title' },
+    { description: 'Updated description' },
+    { descriptionHtml: '<p>Updated description</p>' },
+    { cleanedDescription: 'Updated cleaned description' },
+    { publishedAt: new Date('2026-11-17T00:00:00.000Z') },
+    { durationSeconds: 1234 },
+    { episodeNumber: '2' },
+    { seasonNumber: '2' },
+    { episodeType: 'bonus' },
+    { explicit: false },
+    { audioUrl: 'https://example.com/updated.mp3' },
+    { artworkUrl: 'https://example.com/updated.jpg' },
+    { link: 'https://example.com/updated' },
+    { metadata: { subtitle: 'Updated', author: null, summary: null } },
+  ])('persists metadata edits even when the embedding hash is unchanged: %j', async (change) => {
+    const saved = await feed()
+    const original = parseRss(xml('metadata')).episodes[0]
+    await ingestion.saveFeedEpisodes(saved.id, [original])
+    await ingestion.saveFeedEpisodes(saved.id, [{ ...original, ...change }])
+    const [row] = await db.select().from(podcastEpisode).where(eq(podcastEpisode.feedId, saved.id))
+    expect(row).toMatchObject(change)
+    const jobs = await pending(saved.id)
+    expect(jobs[0].contentHash).toBe(original.contentHash)
+  })
+
+  it('retains unchanged pending embeddings and still accepts later metadata edits', async () => {
+    const saved = await feed()
+    const original = parseRss(xml('pending')).episodes
+    await ingestion.saveFeedEpisodes(saved.id, original)
+    const jobs = await pending(saved.id)
+    await ingestion.saveFeedEpisodes(saved.id, original)
+    expect(await pending(saved.id)).toEqual(jobs)
+    await ingestion.saveFeedEpisodes(
+      saved.id,
+      parseRss(xml('pending', 'Updated pending description.')).episodes,
+    )
+    const next = await pending(saved.id)
+    expect(next[0].episodeId).toBe(jobs[0].episodeId)
+    expect(next[0].contentHash).not.toBe(jobs[0].contentHash)
   })
 
   it('persists failed embeddings for retry without re-embedding successful ones', async () => {

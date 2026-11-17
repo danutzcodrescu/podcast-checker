@@ -1,5 +1,6 @@
 // @vitest-environment node
 import type { Context } from '@netlify/functions'
+import { readFile } from 'node:fs/promises'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import dispatch from '../../netlify/functions/podcast-dispatch'
@@ -39,6 +40,13 @@ afterEach(() => {
 })
 
 describe('Netlify ingestion', () => {
+  it('spaces scheduled dispatches beyond the five-minute database idle timeout', async () => {
+    const config = await readFile(new URL('../../netlify.toml', import.meta.url), 'utf8')
+    expect(config).toMatch(
+      /\[functions\."podcast-dispatch"\][\s\S]*schedule = "\*\/15 \* \* \* \*"/,
+    )
+  })
+
   it('requires a configured secret and rejects missing or wrong credentials', () => {
     vi.stubEnv('INGESTION_SECRET', '')
     expect(() => authorizedIngestionRequest(request())).toThrow('INGESTION_SECRET')

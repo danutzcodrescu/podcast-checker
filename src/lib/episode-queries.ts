@@ -8,19 +8,25 @@ export type EpisodePageParam = { offset: number; searchSessionId?: string }
 
 const firstEpisodePage: EpisodePageParam = { offset: 0, searchSessionId: undefined }
 
-/** Podcast ids and their categories, so episode results are keyed by the library they were fetched for. */
-export type EpisodeScope = ReadonlyArray<readonly [number, readonly string[]]>
+export type EpisodeScope = ReturnType<typeof episodeScope>
 
-export function episodeScope(library: Pick<PodcastLibrary, 'podcasts'>): EpisodeScope {
-  return library.podcasts.map(({ podcast, categories }) => [podcast.id, categories] as const)
+export function episodeScope(library: Pick<PodcastLibrary, 'podcasts'>) {
+  return {
+    podcasts: library.podcasts.map(({ podcast, categories }) => [podcast.id, categories] as const),
+    // Progress polling in the library refreshes browsing without a second timer.
+    // The final sync timestamp catches edits even when the episode count is unchanged.
+    imports: library.podcasts.map(
+      ({ podcast, sync }) => [podcast.id, sync?.episodes ?? 0, sync?.lastSyncedAt ?? null] as const,
+    ),
+  }
 }
 
 /**
  * Shared by the route loader (which prefetches the first page) and the page.
  *
  * The stale times are what make that prefetch worth anything: without them the page would refetch
- * the first page as soon as it hydrates. Browsing still polls for newly imported episodes; a
- * search result set is a fixed snapshot, so it stays fresh longer and does not poll.
+ * the first page as soon as it hydrates. Browsing refreshes when library import progress
+ * changes or on focus/manual refresh. Search snapshots ignore import progress.
  */
 export function latestEpisodesQueryOptions(
   email: string,
@@ -28,7 +34,13 @@ export function latestEpisodesQueryOptions(
   scope: EpisodeScope,
 ) {
   return infiniteQueryOptions({
-    queryKey: ['latest-episodes', email, filters, scope] as const,
+    queryKey: [
+      'latest-episodes',
+      email,
+      filters,
+      scope.podcasts,
+      filters.term ? null : scope.imports,
+    ] as const,
     queryFn: ({ pageParam }) => getLatestEpisodes({ data: { ...filters, ...pageParam } }),
     initialPageParam: firstEpisodePage,
     getNextPageParam: (page): EpisodePageParam | undefined =>
@@ -36,7 +48,7 @@ export function latestEpisodesQueryOptions(
         ? undefined
         : { offset: page.nextOffset, searchSessionId: page.searchSessionId ?? undefined },
     retry: false,
-    refetchInterval: filters.term ? false : 30_000,
+    refetchInterval: false,
     refetchOnWindowFocus: !filters.term,
     staleTime: filters.term ? 5 * 60_000 : 30_000,
   })

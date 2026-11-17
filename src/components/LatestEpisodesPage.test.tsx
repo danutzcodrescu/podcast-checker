@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import type { ComponentPropsWithoutRef } from 'react'
@@ -65,7 +65,7 @@ const episode = {
   categories: ['development'],
 }
 
-function renderPage(initialFilters: Partial<EpisodeFilters> = {}) {
+function renderPage(initialFilters: Partial<EpisodeFilters> = {}, queryClient = new QueryClient()) {
   // Stand-in for the route, which keeps the filters in the URL.
   function Harness() {
     const [filters, setFilters] = useState<EpisodeFilters>({
@@ -82,7 +82,7 @@ function renderPage(initialFilters: Partial<EpisodeFilters> = {}) {
   }
 
   return render(
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider client={queryClient}>
       <Harness />
     </QueryClientProvider>,
   )
@@ -413,6 +413,66 @@ describe('latest episodes page', () => {
 
     expect(screen.getByRole('heading', { name: 'JavaScript patterns' })).toBeInTheDocument()
     expect(mocks.library).not.toHaveBeenCalled()
+    expect(mocks.episodes).not.toHaveBeenCalled()
+  })
+
+  it('refreshes browsing after an import completes without an episode polling timer', async () => {
+    const queryClient = new QueryClient()
+    renderPage({}, queryClient)
+    await screen.findByRole('heading', { name: 'JavaScript patterns' })
+    const key = libraryQueryOptions('listener@example.com').queryKey
+    const library = queryClient.getQueryData(key)!
+    mocks.episodes.mockResolvedValue({
+      episodes: [{ ...episode, title: 'Newly imported episode' }],
+      total: 1,
+      nextOffset: null,
+    })
+    await act(async () => {
+      queryClient.setQueryData(key, {
+        ...library,
+        podcasts: [
+          {
+            ...library.podcasts[0],
+            sync: {
+              status: 'ready',
+              episodes: 2,
+              embedded: 2,
+              failed: 0,
+              lastSyncedAt: new Date().toISOString(),
+            },
+          },
+        ],
+      })
+    })
+    await screen.findByRole('heading', { name: 'Newly imported episode' })
+    expect(mocks.episodes).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the current search snapshot when background imports complete', async () => {
+    const queryClient = new QueryClient()
+    renderPage({ term: 'patterns', sort: 'relevance' }, queryClient)
+    await screen.findByRole('heading', { name: 'JavaScript patterns' })
+    const key = libraryQueryOptions('listener@example.com').queryKey
+    const library = queryClient.getQueryData(key)!
+    mocks.episodes.mockClear()
+    await act(async () => {
+      queryClient.setQueryData(key, {
+        ...library,
+        podcasts: [
+          {
+            ...library.podcasts[0],
+            sync: {
+              status: 'ready',
+              episodes: 2,
+              embedded: 2,
+              failed: 0,
+              lastSyncedAt: new Date().toISOString(),
+            },
+          },
+        ],
+      })
+    })
+    expect(screen.getByRole('heading', { name: 'JavaScript patterns' })).toBeInTheDocument()
     expect(mocks.episodes).not.toHaveBeenCalled()
   })
 

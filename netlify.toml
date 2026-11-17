@@ -10,4 +10,5 @@ directory = "netlify/functions"
 node_bundler = "esbuild"
 
 [functions."podcast-dispatch"]
-schedule = "*/5 * * * *"
+# Leave idle time beyond Neon's five-minute scale-to-zero timeout.
+schedule = "*/15 * * * *"

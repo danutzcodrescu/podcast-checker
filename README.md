@@ -775,7 +775,7 @@ cards, timeframe navigation, and responsive layout in the configured browsers.
 Following a podcast with an RSS URL atomically creates or links a shared feed
 record. The record is a durable outbox: the web request does not fetch RSS, parse
 XML, or call the embedding API. A Netlify scheduled function dispatches a bounded
-background ingestion run every five minutes. Due feeds refresh hourly
+background ingestion run every 15 minutes. Due feeds refresh hourly
 by default, with conditional HTTP requests when supported.
 
 ### Run locally
@@ -819,7 +819,7 @@ The migration role must be able to enable `vector`.
 
 `pnpm build` uses the official Netlify TanStack Start adapter.
 `netlify.toml` configures the build command,
-`dist/client` publish directory, Node 24, and a five-minute ingestion schedule.
+`dist/client` publish directory, Node 24, and a 15-minute ingestion schedule.
 Apply database migrations explicitly before deployment.
 
 #### 1. Keep local PostgreSQL; create Neon for production
@@ -916,7 +916,7 @@ pnpm build:netlify
 
 #### Serverless ingestion behavior
 
-Every five minutes, `podcast-dispatch` invokes `podcast-ingest-background` with a
+Every 15 minutes, `podcast-dispatch` invokes `podcast-ingest-background` with a
 server-only bearer secret. The dispatcher only waits for Netlify's `202 Accepted`;
 the actual work runs in a background function, not inside the 30-second scheduled
 function. Check background logs and database sync status for completion: the
@@ -960,6 +960,8 @@ Netlify compute, requests, deploys, and bandwidth share its monthly credit
 allowance; Cloudflare inference and Neon usage have separate quotas. A large
 initial import can exceed free allowances even with bounded batches. Increase the
 cron interval in `netlify.toml` if you prefer lower polling cost to import latency.
+The 15-minute default leaves room for Neon's five-minute scale-to-zero timeout;
+dispatching every five minutes can keep the database awake even when no work is due.
 
 ### Incremental behavior and load limits
 
@@ -967,7 +969,8 @@ cron interval in `netlify.toml` if you prefer lower polling cost to import laten
   categories remain separate. Unfollowing the last entry for a feed deletes the
   feed and cascades to its episodes and embeddings.
 - Episode identity is the feed plus GUID, falling back to enclosure URL, episode
-  link, or publication date plus title. Repeated RSS items are upserted.
+  link, or publication date plus title. Repeated RSS items are upserted only when
+  stored metadata changes; unchanged episodes keep their `updatedAt` timestamp.
 - **Only unembedded episodes call the embedding API.** Completed vectors remain
   unchanged on scheduled refreshes, including when an existing episode's title
   or description is edited. Display metadata still updates. Pending/failed
@@ -990,6 +993,11 @@ cron interval in `netlify.toml` if you prefer lower polling cost to import laten
   still incur a repeated provider call before its result is committed.
 - The library shows import/embedding progress and the last successful feed
   refresh. **Retry episode import** requests another attempt for a failed show.
+  Progress polls every 15 seconds only while imports or embeddings are pending,
+  stopping on completion or failure. Mutations restart progress polling; stale
+  focus/reconnect refetches pick up other tabs. Episode browsing has no separate
+  polling timer: changed import counts or a completed sync refresh its cache key.
+  Search snapshots stay stable; manual refresh and browsing focus refresh remain.
 - Provider errors retain Cloudflare's numeric error code without raw response
   messages: `3036` identifies an exhausted daily free neuron allowance, while
   `3040` indicates temporary model capacity exhaustion.
