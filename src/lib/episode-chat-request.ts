@@ -1,4 +1,3 @@
-import type { ModelMessage } from '@tanstack/ai'
 import { z } from 'zod'
 
 import { episodeChatPromptLimit, readEpisodeChatResult } from '#/lib/episode-chat'
@@ -30,8 +29,7 @@ export function parseEpisodeChatRequest(body: unknown) {
   ) {
     throw new Error('Invalid chat request')
   }
-  const messages: ModelMessage[] = []
-  let textLength = 0
+  const messages: { role: 'user' | 'assistant'; content: string }[] = []
   for (const message of input.messages) {
     if (message.role === 'reasoning') continue
     if (message.role === 'tool') {
@@ -56,11 +54,14 @@ export function parseEpisodeChatRequest(body: unknown) {
     }
     const content = message.content?.trim()
     if (!content) continue
-    textLength += content.length
-    if (content.length > episodeChatPromptLimit || textLength > 12_000) {
+    if (content.length > episodeChatPromptLimit) {
       throw new Error('Conversation too long')
     }
     messages.push({ role: message.role, content })
+  }
+  // Count the normalized tool history too, not just user and assistant input.
+  if (messages.reduce((length, message) => length + message.content.length, 0) > 12_000) {
+    throw new Error('Conversation too long')
   }
   return {
     messages,

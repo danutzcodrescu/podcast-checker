@@ -435,6 +435,7 @@ describe('latest episodes page', () => {
             ...library.podcasts[0],
             sync: {
               status: 'ready',
+              embeddingsEnabled: true,
               episodes: 2,
               embedded: 2,
               failed: 0,
@@ -463,6 +464,7 @@ describe('latest episodes page', () => {
             ...library.podcasts[0],
             sync: {
               status: 'ready',
+              embeddingsEnabled: true,
               episodes: 2,
               embedded: 2,
               failed: 0,

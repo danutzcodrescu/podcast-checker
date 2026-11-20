@@ -3,6 +3,11 @@ import { describe, expect, it } from 'vitest'
 import { getPodcastArtworkSrcSet } from '#/lib/podcast-artwork'
 
 describe('podcast artwork sources', () => {
+  it.each(['cover.jpg', '/cover.jpg', 'https://[', ''])(
+    'does not crash rendering for invalid or relative artwork: %s',
+    (url) => expect(getPodcastArtworkSrcSet(url)).toBeUndefined(),
+  )
+
   it('offers correctly sized Apple CDN images for mobile, desktop, and high-density screens', () => {
     const srcSet = getPodcastArtworkSrcSet(
       'https://is1-ssl.mzstatic.com/image/thumb/Podcasts/show.jpeg/600x600bb.jpg?quality=90',

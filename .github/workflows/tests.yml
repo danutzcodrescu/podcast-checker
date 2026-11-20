@@ -40,8 +40,6 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Generate translations for Vitest
-        run: pnpm exec paraglide-js compile --project ./project.inlang --outdir ./src/paraglide --strategy url baseLocale
       - name: Migrate the disposable integration database
         run: pnpm db:migrate
       - name: Run all Vitest suites, including database and Testcontainers tests

@@ -11,11 +11,31 @@ beforeEach(() => {
   mocks.library.mockResolvedValue(chatLibrary)
   mocks.episodes.mockResolvedValue({
     ...chatResults(25),
-    ranking: { status: 'baseline', model: 'test' },
+    ranking: { status: 'disabled', model: 'test', durationMs: 0 },
   })
 })
 
 describe('read-only episode search tool', () => {
+  it.each([
+    { status: 'applied', count: 2 },
+    { status: 'fallback', count: 2 },
+    { status: 'disabled', count: 2 },
+    { status: 'skipped', count: 1 },
+    { status: 'skipped', count: 0 },
+  ] as const)('returns $count results with real $status ranking', async ({ status, count }) => {
+    mocks.episodes.mockResolvedValue({
+      ...chatResults(count),
+      total: count,
+      ranking: { status, model: 'test', durationMs: 0 },
+    })
+    const { resolve } = createEpisodeChatSearch('listener-a', new AbortController().signal, 'en')
+    expect(await resolve(chatDecision)).toMatchObject({
+      kind: 'results',
+      total: count,
+      ranking: status,
+    })
+  })
+
   it('uses the session listener, preserves ranking, and enforces ten distinct cards', async () => {
     const { resolve } = createEpisodeChatSearch('listener-a', new AbortController().signal, 'en')
     const result = await resolve(chatDecision)

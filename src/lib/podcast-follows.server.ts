@@ -13,6 +13,43 @@ import { fetchRss } from './rss-fetch'
 import { parseRss } from './rss-parser'
 import { getLogger } from './logger'
 
+type FollowTransaction = Pick<typeof db, 'execute' | 'select' | 'delete'>
+
+async function lockFollowFeeds(
+  tx: FollowTransaction,
+  userId: string,
+  podcastId: number,
+  nextUrl?: string,
+) {
+  // Lock the follow even when absent, then feeds in URL order to prevent swap deadlocks.
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${JSON.stringify(['follow', userId, podcastId])}, 0))`,
+  )
+  const [previous] = await tx
+    .select({ feedId: followedPodcast.feedId, url: podcastFeed.url })
+    .from(followedPodcast)
+    .leftJoin(podcastFeed, eq(podcastFeed.id, followedPodcast.feedId))
+    .where(and(eq(followedPodcast.userId, userId), eq(followedPodcast.podcastId, podcastId)))
+  // oxlint-disable-next-line unicorn/no-array-sort -- ES2022 target; this array is newly created.
+  for (const url of [...new Set([previous?.url, nextUrl].filter((value) => !!value))].sort()) {
+    // oxlint-disable-next-line no-await-in-loop -- Every writer acquires shared-feed locks in the same order.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`feed:${url}`}, 0))`)
+  }
+  return previous?.feedId
+}
+
+async function removeUnfollowedFeed(tx: FollowTransaction, feedId: string) {
+  // Foreign-key cascades remove episodes and embeddings only after the last follow leaves.
+  await tx
+    .delete(podcastFeed)
+    .where(
+      and(
+        eq(podcastFeed.id, feedId),
+        sql`not exists (select 1 from ${followedPodcast} where ${followedPodcast.feedId} = ${podcastFeed.id})`,
+      ),
+    )
+}
+
 export async function savePodcastFollow(userId: string, data: z.infer<typeof savePodcastInput>) {
   const categories = [...new Map(data.categories.map((name) => [categoryId(name), name])).entries()]
   const token =
@@ -20,10 +57,11 @@ export async function savePodcastFollow(userId: string, data: z.infer<typeof sav
       ? randomUUID()
       : null
   const saved = await db.transaction(async (tx) => {
+    const url = data.podcast.feedUrl ? new URL(data.podcast.feedUrl) : null
+    if (url) url.hash = ''
+    const previousFeedId = await lockFollowFeeds(tx, userId, data.podcast.id, url?.href)
     let feedId: string | null = null
-    if (data.podcast.feedUrl) {
-      const url = new URL(data.podcast.feedUrl)
-      url.hash = ''
+    if (url) {
       const [feed] = await tx
         .insert(podcastFeed)
         .values({ url: url.href })
@@ -60,6 +98,9 @@ export async function savePodcastFollow(userId: string, data: z.infer<typeof sav
         },
       })
       .returning({ token: followedPodcast.categorisationToken })
+    if (previousFeedId && previousFeedId !== feedId) {
+      await removeUnfollowedFeed(tx, previousFeedId)
+    }
     return row
   })
   if (saved.token && data.podcast.feedUrl) {
@@ -70,33 +111,13 @@ export async function savePodcastFollow(userId: string, data: z.infer<typeof sav
 
 export async function removePodcastFollow(userId: string, podcastId: number) {
   await db.transaction(async (tx) => {
-    const [followed] = await tx
-      .select({ feedId: followedPodcast.feedId })
-      .from(followedPodcast)
-      .where(and(eq(followedPodcast.userId, userId), eq(followedPodcast.podcastId, podcastId)))
-    // Follow also locks the feed before changing the library. Serialize cleanup
-    // on that same row so concurrent follows/unfollows cannot leave an orphan.
-    if (followed?.feedId) {
-      await tx
-        .select({ id: podcastFeed.id })
-        .from(podcastFeed)
-        .where(eq(podcastFeed.id, followed.feedId))
-        .for('update')
-    }
+    await lockFollowFeeds(tx, userId, podcastId)
     const [removed] = await tx
       .delete(followedPodcast)
       .where(and(eq(followedPodcast.userId, userId), eq(followedPodcast.podcastId, podcastId)))
       .returning({ feedId: followedPodcast.feedId })
     if (!removed?.feedId) return
-    // Existing foreign-key cascades delete the feed's episodes and embeddings.
-    await tx
-      .delete(podcastFeed)
-      .where(
-        and(
-          eq(podcastFeed.id, removed.feedId),
-          sql`not exists (select 1 from ${followedPodcast} where ${followedPodcast.feedId} = ${podcastFeed.id})`,
-        ),
-      )
+    await removeUnfollowedFeed(tx, removed.feedId)
   })
   return readPodcastLibrary(userId)
 }

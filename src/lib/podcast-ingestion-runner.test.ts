@@ -47,8 +47,8 @@ describe('bounded serverless ingestion', () => {
     expect(mocks.release).not.toHaveBeenCalled()
   })
 
-  it('bounds work and re-reads embeddings after importing feeds', async () => {
-    const feeds = Array.from({ length: 10 }, (_, i) => ({ id: `${i}` }))
+  it('processes the due feeds within its deadline and bounds embedding batches', async () => {
+    const feeds = Array.from({ length: 50 }, (_, i) => ({ id: `${i}` }))
     const embeddings = Array.from({ length: 500 }, (_, i) => ({
       episodeId: `${i}`,
       contentHash: 'h',
@@ -58,11 +58,11 @@ describe('bounded serverless ingestion', () => {
       .mockResolvedValueOnce({ feeds: [], embeddings })
     expect(await runPodcastIngestion()).toEqual({
       skipped: false,
-      feeds: 5,
+      feeds: 50,
       embeddingBatches: 20,
       failures: 0,
     })
-    expect(mocks.sync).toHaveBeenCalledTimes(5)
+    expect(mocks.sync).toHaveBeenCalledTimes(50)
     expect(mocks.embed).toHaveBeenCalledTimes(20)
     expect(mocks.embed.mock.calls.every(([jobs]) => jobs.length === 16)).toBe(true)
     expect(mocks.release).toHaveBeenCalledWith('lease-token')

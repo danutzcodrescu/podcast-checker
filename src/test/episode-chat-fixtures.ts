@@ -38,7 +38,7 @@ export function chatResults(count = 6): EpisodeChatResults {
     filters: { ...chatDecision.filters },
     total: 25,
     semanticUnavailable: false,
-    ranking: 'baseline',
+    ranking: 'disabled',
     episodes: Array.from({ length: count }, (_, index) => ({
       id: `episode-${index}`,
       title: `Roman history ${index + 1}`,

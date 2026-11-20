@@ -7,7 +7,6 @@ import { getLogger } from './logger'
 // Leave ample cleanup time below Netlify's 15-minute hard termination. The lease
 // lasts longer than that hard limit, so retries cannot overlap a live invocation.
 const runBudgetMs = 8 * 60_000
-const maxFeeds = 5
 const maxEmbeddingBatches = 20
 
 export async function runPodcastIngestion() {
@@ -30,7 +29,7 @@ export async function runPodcastIngestion() {
   const signal = AbortSignal.timeout(runBudgetMs)
   try {
     const { feeds } = await getDueIngestion()
-    for (const feed of feeds.slice(0, maxFeeds)) {
+    for (const feed of feeds) {
       if (signal.aborted) break
       try {
         await syncPodcastFeed(feed.id, refreshMinutes, signal)

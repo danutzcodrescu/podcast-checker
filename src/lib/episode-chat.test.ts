@@ -92,6 +92,34 @@ describe('episode chat contract', () => {
     ])
       expect(() => parseEpisodeChatRequest({ messages })).toThrow()
   })
+
+  it('counts normalized result titles and clarification history in the conversation budget', () => {
+    const result = chatResults(1)
+    result.episodes[0].title = 'x'.repeat(12_000)
+    const results = { role: 'tool', content: JSON.stringify(result) }
+    const clarification = {
+      role: 'tool',
+      content: JSON.stringify({ kind: 'clarification', message: 'x'.repeat(600) }),
+    }
+    for (const history of [[results], Array.from({ length: 20 }, () => clarification)]) {
+      expect(() =>
+        parseEpisodeChatRequest({ messages: [...history, { role: 'user', content: 'History' }] }),
+      ).toThrow('Conversation too long')
+    }
+  })
+
+  it('applies the budget to forwarded context rather than discarded card descriptions', () => {
+    const result = chatResults(1)
+    result.episodes[0].description = 'x'.repeat(20_000)
+    expect(() =>
+      parseEpisodeChatRequest({
+        messages: [
+          { role: 'tool', content: JSON.stringify(result) },
+          { role: 'user', content: 'History' },
+        ],
+      }),
+    ).not.toThrow()
+  })
 })
 
 describe('episode chat tool input repair', () => {

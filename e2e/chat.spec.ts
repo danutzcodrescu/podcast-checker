@@ -94,6 +94,9 @@ test('chat landing, real streamed cards, timeframe links, reset, and responsive 
     await expect(page.getByRole('heading', { name: 'Roman history 1', exact: true })).toBeVisible()
     await expect(alert).toHaveCount(0)
     expect(requests).toBe(3)
+    await page.getByRole('button', { name: 'New conversation' }).click()
+    await expect(page.getByText('What would you like to listen to?')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Roman history 1', exact: true })).toHaveCount(0)
     await page.getByRole('button', { name: 'Search settings and Pocket Casts' }).click()
     await expect(
       page.getByText('Conversations are not saved by this app.', { exact: false }),

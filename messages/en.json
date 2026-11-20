@@ -152,6 +152,7 @@
   "sync_no_feed": "No RSS feed URL is available.",
   "sync_queued": "Episode import queued",
   "sync_importing": "Importing episodes…",
+  "sync_imported": "Episodes imported · Embeddings disabled",
   "sync_embedding": "Embedding episodes…",
   "sync_ready": "Episodes indexed",
   "sync_failed": "Import or embedding failed; automatic retry is scheduled.",

@@ -8,7 +8,11 @@ function hasPendingImports(library: PodcastLibrary | undefined) {
     library?.podcasts.some(({ podcast, sync }) => {
       if (!podcast.feedUrl) return false
       if (!sync || sync.status === 'queued' || sync.status === 'syncing') return true
-      return sync.status === 'ready' && sync.embedded + sync.failed < sync.episodes
+      return (
+        sync.status === 'ready' &&
+        sync.embeddingsEnabled &&
+        sync.embedded + sync.failed < sync.episodes
+      )
     }) ?? false
   )
 }

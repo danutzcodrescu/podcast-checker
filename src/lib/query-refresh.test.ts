@@ -14,6 +14,7 @@ vi.mock('./latest-episodes', () => ({ getLatestEpisodes: mocks.episodes }))
 const email = 'listener@example.com'
 const complete: PodcastSync = {
   status: 'ready',
+  embeddingsEnabled: true,
   episodes: 10,
   embedded: 10,
   failed: 0,
@@ -83,6 +84,7 @@ describe('database-friendly query refresh', () => {
     ['no feed', library(null, null)],
     ['failed feed', library({ ...complete, status: 'failed', embedded: 0 })],
     ['failed embeddings awaiting retry', library({ ...complete, embedded: 8, failed: 2 })],
+    ['embeddings disabled', library({ ...complete, embedded: 0, embeddingsEnabled: false })],
   ])('does not poll a library that is %s', async (_label, data) => {
     await observeLibrary(data)
     await vi.advanceTimersByTimeAsync(60_000)
@@ -114,6 +116,17 @@ describe('database-friendly query refresh', () => {
       library({ ...complete, status: 'queued' }),
     )
     await vi.advanceTimersByTimeAsync(15_000)
+    expect(mocks.library).toHaveBeenCalledOnce()
+  })
+
+  it('still polls RSS imports when embeddings are disabled, then stops once imported', async () => {
+    await observeLibrary(
+      library({ ...complete, status: 'queued', embedded: 0, embeddingsEnabled: false }),
+    )
+    mocks.library.mockResolvedValue(library({ ...complete, embedded: 0, embeddingsEnabled: false }))
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(mocks.library).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(60_000)
     expect(mocks.library).toHaveBeenCalledOnce()
   })
 

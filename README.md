@@ -358,7 +358,8 @@ workers never share a database or server, so opposite flag states can run in par
 Tests that seed data receive their isolated database through the `db` fixture;
 do not import the application database into E2E specs.
 
-- `pnpm test` runs Vitest component tests with Testing Library.
+- `pnpm test` runs Vitest component tests with Testing Library. Vitest's Paraglide
+  plugin generates translations for normal, direct CLI, and watch-mode test runs.
 - `pnpm test:watch` runs the component tests in watch mode.
 - `pnpm test:follows` runs the follow lifecycle integration tests with Testcontainers.
   Docker must be running. The suite starts an isolated `pgvector/pgvector:pg18`
@@ -454,6 +455,10 @@ and screen pixel density.
   its feed, imported episodes, and embeddings are deleted together using database
   cascades. Following it again starts a fresh import and vectorization.
   Existing categories remain available.
+
+Updating a followed podcast's feed URL applies the same last-follower cleanup to
+the old feed. Follow edits and cleanup are serialized within database transactions;
+shared feeds remain available to their other followers.
 
 Libraries and categories are stored in PostgreSQL and scoped to the authenticated
 user. Apply `drizzle/0001_podcast_library.sql` with `pnpm db:migrate` when upgrading
@@ -747,8 +752,9 @@ made for diagnostics.
 
 Chat has no application-level per-listener request quota or associated database
 table. Configure spending limits in OpenRouter as needed. Request bodies are
-limited to 256,000 bytes; prompts to 2,000 characters, and conversation user/assistant
-text to 12,000 characters. When context is full, start a new conversation with **+**.
+limited to 256,000 bytes; prompts to 2,000 characters, and all forwarded conversation
+text, including normalized tool history, to 12,000 characters. When context is full,
+start a new conversation with **+**; this clears history and starts a fresh identity.
 
 Design for an inexpensive model: explicit supported capabilities, schema validation,
 and focused request-interpretation tests. Schema validation cannot detect every
@@ -925,7 +931,7 @@ initial 202 does not prove processing succeeded.
 - A database lease admits one serverless run at a time, including retries and
   overlapping deploys. The lease uses ordinary SQL and works with Neon's
   transaction pooler; it does not depend on a persistent session/advisory lock.
-- Each run attempts at most **five feeds** and **20 embedding batches** (16 inputs
+- Each run attempts at most **100 due feeds** and **20 embedding batches** (16 inputs
   per batch by default). It stops starting work after an **eight-minute** budget,
   propagates cancellation to ingestion, and leaves ample time below Netlify's
   15-minute hard limit.
@@ -998,6 +1004,8 @@ dispatching every five minutes can keep the database awake even when no work is 
   focus/reconnect refetches pick up other tabs. Episode browsing has no separate
   polling timer: changed import counts or a completed sync refresh its cache key.
   Search snapshots stay stable; manual refresh and browsing focus refresh remain.
+- Without Cloudflare credentials, completed RSS imports show embeddings as disabled
+  and stop progress polling; pending RSS imports still poll normally.
 - Provider errors retain Cloudflare's numeric error code without raw response
   messages: `3036` identifies an exhausted daily free neuron allowance, while
   `3040` indicates temporary model capacity exhaustion.

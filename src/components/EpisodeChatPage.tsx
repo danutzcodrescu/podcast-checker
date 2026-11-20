@@ -6,6 +6,7 @@ import {
   ChevronRight,
   List,
   LoaderCircle,
+  Plus,
   Search,
   SendHorizontal,
   SlidersHorizontal,
@@ -81,9 +82,9 @@ export function EpisodeChatPage({ email }: { email: string }) {
   const [timedOut, setTimedOut] = useState(false)
   const [now] = useState(() => Date.now())
   // Conversations are intentionally ephemeral: a reload starts a new one.
-  const [threadId] = useState(() => crypto.randomUUID())
+  const [threadId, setThreadId] = useState(() => crypto.randomUUID())
   const bottom = useRef<HTMLDivElement>(null)
-  const { messages, sendMessage, isLoading, error, stop, reload } = useChat({
+  const { messages, sendMessage, isLoading, error, stop, reload, clear } = useChat({
     threadId,
     connection: fetchServerSentEvents('/api/chat', () => ({
       credentials: 'same-origin',
@@ -332,6 +333,24 @@ export function EpisodeChatPage({ email }: { email: string }) {
                 submit(input)
               }}
             >
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label={m.chat_new()}
+                title={m.chat_new()}
+                onClick={() => {
+                  clear()
+                  setThreadId(crypto.randomUUID())
+                  setInput('')
+                  setHeaderInput('')
+                  setResponseStatus(null)
+                  setStopped(false)
+                  setTimedOut(false)
+                }}
+              >
+                <Plus className="size-5" aria-hidden="true" />
+              </Button>
               <div className="flex min-w-0 flex-1 items-center rounded-xl border border-input bg-white focus-within:outline-2 focus-within:outline-ring">
                 <textarea
                   rows={1}

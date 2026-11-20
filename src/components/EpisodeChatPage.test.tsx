@@ -196,6 +196,29 @@ describe('episode chat page', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
+  it('starts a fresh conversation after a context-limit error without replaying old history', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 400 }))
+    const user = userEvent.setup()
+    renderPage()
+    const input = screen.getByRole('textbox', { name: 'Ask about your episodes' })
+    await waitFor(() => expect(input).toBeEnabled())
+    await user.type(input, 'Old conversation{enter}')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Start a new conversation')
+    const firstWire = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body))
+
+    await user.type(input, 'Unsent draft')
+    await user.click(screen.getByRole('button', { name: 'New conversation' }))
+    expect(input).toHaveValue('')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByRole('log')).toHaveTextContent(/^$/)
+    await user.type(input, 'Fresh request{enter}')
+    expect(await screen.findByRole('heading', { name: 'Roman history 1' })).toBeVisible()
+    const secondWire = JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body))
+    expect(secondWire.threadId).not.toBe(firstWire.threadId)
+    expect(secondWire.messages).toHaveLength(1)
+    expect(secondWire.messages[0].content).toBe('Fresh request')
+  })
+
   it('shows safe retry/browse feedback for provider failures, never raw upstream errors', async () => {
     vi.mocked(fetch).mockResolvedValue(new Response('SECRET provider details', { status: 503 }))
     const user = userEvent.setup()
@@ -244,6 +267,7 @@ describe('episode chat page', () => {
     renderPage()
     expect(screen.getByRole('heading', { name: 'Que souhaitez-vous écouter ?' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Envoyer le message' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Nouvelle conversation' })).toBeInTheDocument()
   })
 
   it('explains an empty model response instead of leaving an unanswered user bubble', async () => {
@@ -289,5 +313,28 @@ describe('episode chat page', () => {
     ).toBeVisible()
     expect(screen.getByRole('button', { name: 'Send message' })).toBeInTheDocument()
     expect(screen.queryByRole('list', { name: 'Search results' })).not.toBeInTheDocument()
+  })
+
+  it('aborts an active search when starting a new conversation', async () => {
+    let signal: AbortSignal | null | undefined
+    vi.mocked(fetch).mockImplementationOnce(
+      (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          signal = init?.signal
+          signal?.addEventListener('abort', () => reject(signal?.reason), { once: true })
+        }),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    const input = screen.getByRole('textbox', { name: 'Ask about your episodes' })
+    await waitFor(() => expect(input).toBeEnabled())
+    await user.type(input, 'Old search{enter}')
+    await screen.findByRole('button', { name: 'Stop searching' })
+    await user.click(screen.getByRole('button', { name: 'New conversation' }))
+    expect(signal?.aborted).toBe(true)
+    expect(screen.getByRole('log')).toHaveTextContent(/^$/)
+    await user.type(input, 'Fresh search{enter}')
+    expect(await screen.findByRole('heading', { name: 'Roman history 1' })).toBeVisible()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 })

@@ -4,7 +4,7 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { user } from '#/db/auth-schema'
-import { podcastEpisode, podcastFeed } from '#/db/ingestion-schema'
+import { episodeEmbedding, podcastEpisode, podcastFeed } from '#/db/ingestion-schema'
 import { podcastCategory } from '#/db/library-schema'
 import { createTestDatabase } from '#/test/database'
 
@@ -283,5 +283,106 @@ describe.runIf(database.enabled)('follow categorisation lifecycle', () => {
       categories: ['History'],
     })
     expect(refollowed.podcasts[0].sync?.episodes).toBe(0)
+  })
+
+  it.each(['replace', 'clear'])(
+    'cleans up an unshared feed and its episodes and embeddings on %s',
+    async (change) => {
+      const show = podcast()
+      await follows.savePodcastFollow(owner, { podcast: show, categories: ['History'] })
+      const [feed] = await db.select().from(podcastFeed).where(eq(podcastFeed.url, show.feedUrl))
+      const [episode] = await db
+        .insert(podcastEpisode)
+        .values({
+          feedId: feed.id,
+          key: 'old-episode',
+          title: 'Old episode',
+          embeddingTitle: 'Old episode',
+          description: '',
+          cleanedDescription: '',
+        })
+        .returning()
+      await db.insert(episodeEmbedding).values({
+        episodeId: episode.id,
+        input: 'Old episode',
+        contentHash: 'test',
+        model: 'test',
+        preprocessingVersion: 1,
+      })
+
+      const updated = { ...show, feedUrl: change === 'clear' ? null : podcast().feedUrl }
+      const library = await follows.savePodcastFollow(owner, {
+        podcast: updated,
+        categories: ['History'],
+      })
+      expect(library.podcasts[0].podcast).toEqual(updated)
+      expect(await db.select().from(podcastFeed).where(eq(podcastFeed.id, feed.id))).toEqual([])
+      expect(
+        await db.select().from(podcastEpisode).where(eq(podcastEpisode.id, episode.id)),
+      ).toEqual([])
+      expect(
+        await db.select().from(episodeEmbedding).where(eq(episodeEmbedding.episodeId, episode.id)),
+      ).toEqual([])
+    },
+  )
+
+  it('preserves a shared feed during replacement and cleans it up when its last follower moves', async () => {
+    const show = podcast()
+    const other = await listener()
+    await follows.savePodcastFollow(owner, { podcast: show, categories: ['History'] })
+    await follows.savePodcastFollow(other, { podcast: show, categories: ['History'] })
+    const replacement = { ...show, feedUrl: podcast().feedUrl }
+    await follows.savePodcastFollow(owner, { podcast: replacement, categories: ['History'] })
+    expect(
+      await db.select().from(podcastFeed).where(eq(podcastFeed.url, show.feedUrl)),
+    ).toHaveLength(1)
+    expect((await readLibrary(other)).podcasts[0].podcast.feedUrl).toBe(show.feedUrl)
+    await follows.savePodcastFollow(other, { podcast: replacement, categories: ['History'] })
+    expect(await db.select().from(podcastFeed).where(eq(podcastFeed.url, show.feedUrl))).toEqual([])
+  })
+
+  it('serializes concurrent replacements of the same follow without leaving intermediate feeds', async () => {
+    const show = podcast()
+    const next = { ...show, feedUrl: podcast().feedUrl }
+    const last = { ...show, feedUrl: podcast().feedUrl }
+    await follows.savePodcastFollow(owner, { podcast: show, categories: ['History'] })
+    await Promise.all([
+      follows.savePodcastFollow(owner, { podcast: next, categories: ['History'] }),
+      follows.savePodcastFollow(owner, { podcast: last, categories: ['History'] }),
+    ])
+    const library = await readLibrary(owner)
+    const remaining = await db
+      .select({ url: podcastFeed.url })
+      .from(podcastFeed)
+      .where(inArray(podcastFeed.url, [show.feedUrl, next.feedUrl, last.feedUrl]))
+    expect(remaining).toEqual([{ url: library.podcasts[0].podcast.feedUrl }])
+  })
+
+  it('allows two listeners to swap shared feeds concurrently without deadlocking', async () => {
+    const first = podcast()
+    const second = { ...first, feedUrl: podcast().feedUrl }
+    const other = await listener()
+    await follows.savePodcastFollow(owner, { podcast: first, categories: ['History'] })
+    await follows.savePodcastFollow(other, { podcast: second, categories: ['History'] })
+    await Promise.all([
+      follows.savePodcastFollow(owner, { podcast: second, categories: ['History'] }),
+      follows.savePodcastFollow(other, { podcast: first, categories: ['History'] }),
+    ])
+    expect((await readLibrary(owner)).podcasts[0].podcast.feedUrl).toBe(second.feedUrl)
+    expect((await readLibrary(other)).podcasts[0].podcast.feedUrl).toBe(first.feedUrl)
+  })
+
+  it('reports whether embeddings can progress without exposing credentials', async () => {
+    const show = podcast()
+    vi.stubEnv('CLOUDFLARE_ACCOUNT_ID', '')
+    vi.stubEnv('CLOUDFLARE_API_TOKEN', '')
+    const disabled = await follows.savePodcastFollow(owner, {
+      podcast: show,
+      categories: ['History'],
+    })
+    expect(disabled.podcasts[0].sync?.embeddingsEnabled).toBe(false)
+    vi.stubEnv('CLOUDFLARE_ACCOUNT_ID', 'a'.repeat(32))
+    vi.stubEnv('CLOUDFLARE_API_TOKEN', 'test-token')
+    expect((await readLibrary(owner)).podcasts[0].sync?.embeddingsEnabled).toBe(true)
   })
 })

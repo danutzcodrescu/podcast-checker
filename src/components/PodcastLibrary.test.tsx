@@ -109,6 +109,7 @@ describe('podcast library', () => {
           categories: [],
           sync: {
             status: 'ready',
+            embeddingsEnabled: true,
             episodes: 20,
             embedded: 12,
             failed: 8,

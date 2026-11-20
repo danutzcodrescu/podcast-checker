@@ -62,7 +62,7 @@ export const episodeChatResult = z.discriminatedUnion('kind', [
     episodes: z.array(chatEpisode).max(episodeChatLimit),
     total: z.number().int().nonnegative(),
     semanticUnavailable: z.boolean(),
-    ranking: z.enum(['applied', 'fallback', 'baseline']).nullable(),
+    ranking: z.enum(['applied', 'fallback', 'disabled', 'skipped']).nullable(),
   }),
   z.object({ kind: z.literal('clarification'), message: z.string().min(1).max(600) }),
   z.object({ kind: z.literal('ignored') }),

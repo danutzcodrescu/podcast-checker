@@ -2,6 +2,7 @@ const artworkWidths = [80, 112, 160, 224, 336, 600]
 const artworkSizeSegment = /\/\d+x\d+bb(?=\.[a-z]+$|$)/i
 
 export function getPodcastArtworkSrcSet(artworkUrl: string): string | undefined {
+  if (!URL.canParse(artworkUrl)) return undefined
   const url = new URL(artworkUrl)
   // Apple's artwork CDN supports resizing via the final size segment.
   // Preserve other image providers' URLs without assuming they can be resized.

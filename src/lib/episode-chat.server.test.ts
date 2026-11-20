@@ -86,7 +86,7 @@ beforeEach(() => {
   mocks.library.mockResolvedValue(chatLibrary)
   mocks.episodes.mockResolvedValue({
     ...chatResults(25),
-    ranking: { status: 'baseline', model: 'test' },
+    ranking: { status: 'disabled', model: 'test', durationMs: 0 },
   })
   // No test may contact a real provider or spend money.
   vi.stubGlobal(

@@ -6,6 +6,7 @@ import { episodeEmbedding, podcastEpisode, podcastFeed } from '#/db/ingestion-sc
 import type { Podcast } from '#/lib/apple-podcasts'
 import type { PodcastSync } from '#/lib/podcast-sync'
 import { runEpisodeSearchQuery } from '#/lib/episode-search-database.server'
+import { cloudflareEmbeddingsConfigured } from '#/lib/episode-embeddings'
 
 export async function readPodcastLibrary(userId: string, signal?: AbortSignal) {
   signal?.throwIfAborted()
@@ -61,6 +62,7 @@ export async function readPodcastLibrary(userId: string, signal?: AbortSignal) {
       sync: row.feed
         ? {
             status: row.feed.status,
+            embeddingsEnabled: cloudflareEmbeddingsConfigured(),
             episodes: row.episodes ?? 0,
             embedded: row.embedded ?? 0,
             failed: row.failed ?? 0,

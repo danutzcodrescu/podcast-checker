@@ -152,6 +152,7 @@
   "sync_no_feed": "Aucune URL de flux RSS disponible.",
   "sync_queued": "Importation des épisodes en attente",
   "sync_importing": "Importation des épisodes…",
+  "sync_imported": "Épisodes importés · Vectorisation désactivée",
   "sync_embedding": "Vectorisation des épisodes…",
   "sync_ready": "Épisodes indexés",
   "sync_failed": "Échec de l’importation ou de la vectorisation ; une nouvelle tentative est prévue.",
